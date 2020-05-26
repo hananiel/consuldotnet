@@ -24,7 +24,7 @@ steps:
     arguments: '--no-build -c $(buildConfiguration)'
     packagesToPack: 'Consul.sln'
     versioningScheme: 'byEnvVar'
-    versionEnvVar: PackageVersion
+    versionEnvVar: 'alpha-0.0.1'
 
 - task: PublishBuildArtifacts@1
   inputs:
