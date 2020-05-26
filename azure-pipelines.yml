@@ -11,6 +11,7 @@ pool:
 
 variables:
   buildConfiguration: 'Release'
+  packageVersion: 'alpha-0.0.1'
 
 steps:
 - script: dotnet build --configuration $(buildConfiguration)
@@ -24,7 +25,7 @@ steps:
     arguments: '--no-build -c $(buildConfiguration)'
     packagesToPack: 'Consul.sln'
     versioningScheme: 'byEnvVar'
-    versionEnvVar: 'alpha-0.0.1'
+    versionEnvVar: packageVersion
 
 - task: PublishBuildArtifacts@1
   inputs:
