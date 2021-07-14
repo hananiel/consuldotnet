@@ -27,24 +27,8 @@ using Xunit;
 
 namespace Consul.Test
 {
-    public class KVTest : IDisposable
+    public class KVTest : BaseFixture
     {
-        private ConsulClient _client;
-
-        public KVTest()
-        {
-            _client = new ConsulClient(c =>
-            {
-                c.Token = TestHelper.MasterToken;
-                c.Address = TestHelper.HttpUri;
-            });
-        }
-
-        public void Dispose()
-        {
-            _client.Dispose();
-        }
-
         private static readonly Random Random = new Random();
 
         internal static string GenerateTestKeyName()
@@ -262,32 +246,23 @@ namespace Consul.Test
             getRequest = await _client.KV.Get(key);
             Assert.Null(getRequest.Response);
         }
+
         [Fact]
         public async Task KV_WatchGet_Cancel()
         {
             var key = GenerateTestKeyName();
-
-            var value = Encoding.UTF8.GetBytes("test");
 
             var getRequest = await _client.KV.Get(key);
             Assert.Null(getRequest.Response);
 
             using (var cts = new CancellationTokenSource())
             {
-                cts.CancelAfter(1000);
+                cts.Cancel();
 
-                try
+                await Assert.ThrowsAsync<TaskCanceledException>(async () => await _client.KV.Get(key, new QueryOptions
                 {
-                    while (!cts.IsCancellationRequested)
-                    {
-                        getRequest = await _client.KV.Get(key, new QueryOptions() { WaitIndex = getRequest.LastIndex }, cts.Token);
-                    }
-                    Assert.True(false, "A cancellation exception was not thrown when one was expected.");
-                }
-                catch (TaskCanceledException ex)
-                {
-                    Assert.IsType<TaskCanceledException>(ex);
-                }
+                    WaitIndex = getRequest.LastIndex
+                }, cts.Token));
             }
         }
 
@@ -333,27 +308,17 @@ namespace Consul.Test
         {
             var prefix = GenerateTestKeyName();
 
-            var value = Encoding.UTF8.GetBytes("test");
-
             var pairs = await _client.KV.List(prefix);
             Assert.Null(pairs.Response);
 
             using (var cts = new CancellationTokenSource())
             {
-                cts.CancelAfter(1000);
+                cts.Cancel();
 
-                try
+                await Assert.ThrowsAsync<TaskCanceledException>(async () => await _client.KV.List(prefix, new QueryOptions
                 {
-                    while (!cts.IsCancellationRequested)
-                    {
-                        pairs = await _client.KV.List(prefix, new QueryOptions() { WaitIndex = pairs.LastIndex }, cts.Token);
-                    }
-                    Assert.True(false, "A cancellation exception was not thrown when one was expected.");
-                }
-                catch (TaskCanceledException ex)
-                {
-                    Assert.IsType<TaskCanceledException>(ex);
-                }
+                    WaitIndex = pairs.LastIndex
+                }, cts.Token));
             }
         }
 

@@ -89,7 +89,7 @@ namespace Consul
         }
     }
 
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
     [Serializable]
 #endif
     public class SessionExpiredException : Exception
@@ -97,7 +97,7 @@ namespace Consul
         public SessionExpiredException() { }
         public SessionExpiredException(string message) : base(message) { }
         public SessionExpiredException(string message, Exception inner) : base(message, inner) { }
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
         protected SessionExpiredException(
           SerializationInfo info,
           StreamingContext context) : base(info, context) { }
@@ -105,7 +105,7 @@ namespace Consul
 
     }
 
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
     [Serializable]
 #endif
     public class SessionCreationException : Exception
@@ -113,7 +113,7 @@ namespace Consul
         public SessionCreationException() { }
         public SessionCreationException(string message) : base(message) { }
         public SessionCreationException(string message, Exception inner) : base(message, inner) { }
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
         protected SessionCreationException(
           SerializationInfo info,
           StreamingContext context) : base(info, context) { }
@@ -439,7 +439,7 @@ namespace Consul
         /// <returns>An updated session entry</returns>
         public async Task<WriteResult<SessionEntry>> Renew(string id, WriteOptions q, CancellationToken ct = default(CancellationToken))
         {
-            var res = await _client.Put<object, SessionEntry[]>(string.Format("/v1/session/renew/{0}", id), q).Execute(ct).ConfigureAwait(false);
+            var res = await _client.Put<object, SessionEntry[]>(string.Format("/v1/session/renew/{0}", id), null, q).Execute(ct).ConfigureAwait(false);
             if (res.StatusCode == HttpStatusCode.NotFound)
             {
                 throw new SessionExpiredException(string.Format("Session expired: {0}", id));

@@ -24,10 +24,6 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography.X509Certificates;
 using Consul.Filtering;
 using Newtonsoft.Json;
-#if !(CORECLR || PORTABLE || PORTABLE40)
-using System.Security.Permissions;
-using System.Runtime.Serialization;
-#endif
 
 namespace Consul
 {
@@ -47,7 +43,7 @@ namespace Consul
 
         internal bool ClientCertificateSupported { get { return _clientCertSupport.Value; } }
 
-#if CORECLR
+#if NETSTANDARD || NETCOREAPP
         [Obsolete("Use of DisableServerCertificateValidation should be converted to setting the HttpHandler's ServerCertificateCustomValidationCallback in the ConsulClient constructor" +
             "This property will be removed in a future release.", false)]
 #else
@@ -81,7 +77,7 @@ namespace Consul
         /// Credentials to use for access to the HTTP API.
         /// This is only needed if an authenticating service exists in front of Consul; Token is used for ACL authentication by Consul.
         /// </summary>
-#if CORECLR
+#if NETSTANDARD || NETCOREAPP
         [Obsolete("Use of HttpAuth should be converted to setting the HttpHandler's Credential property in the ConsulClient constructor" +
             "This property will be removed in a future release.", false)]
 #else
@@ -108,7 +104,7 @@ namespace Consul
         /// <exception cref="PlatformNotSupportedException">Setting this property will throw a PlatformNotSupportedException on Mono</exception>
 #if __MonoCS__
         [Obsolete("Client Certificates are not implemented in Mono", true)]
-#elif CORECLR
+#elif NETSTANDARD || NETCOREAPP
         [Obsolete("Use of ClientCertificate should be converted to adding to the HttpHandler's ClientCertificates list in the ConsulClient constructor." +
             "This property will be removed in a future release.", false)]
 #else
@@ -269,7 +265,7 @@ namespace Consul
         {
             internal readonly bool skipClientDispose;
             internal readonly HttpClient HttpClient;
-#if CORECLR
+#if NETSTANDARD || NETCOREAPP
             internal readonly HttpClientHandler HttpHandler;
 #else
             internal readonly WebRequestHandler HttpHandler;
@@ -279,7 +275,7 @@ namespace Consul
             public ConsulClientConfigurationContainer()
             {
                 Config = new ConsulClientConfiguration();
-#if CORECLR
+#if NETSTANDARD || NETCOREAPP
                 HttpHandler = new HttpClientHandler();
 #else
                 HttpHandler = new WebRequestHandler();
@@ -301,7 +297,7 @@ namespace Consul
             public ConsulClientConfigurationContainer(ConsulClientConfiguration config)
             {
                 Config = config;
-#if CORECLR
+#if NETSTANDARD || NETCOREAPP
                 HttpHandler = new HttpClientHandler();
 #else
                 HttpHandler = new WebRequestHandler();
@@ -363,7 +359,7 @@ namespace Consul
         private ConsulClientConfigurationContainer ConfigContainer;
 
         internal HttpClient HttpClient { get { return ConfigContainer.HttpClient; } }
-#if CORECLR
+#if NETSTANDARD || NETCOREAPP
         internal HttpClientHandler HttpHandler { get { return ConfigContainer.HttpHandler; } }
 #else
         internal WebRequestHandler HttpHandler { get { return ConfigContainer.HttpHandler; } }
@@ -402,7 +398,7 @@ namespace Consul
         /// <param name="configOverride">The Action to modify the default configuration with</param>
         /// <param name="clientOverride">The Action to modify the HttpClient with</param>
         /// <param name="handlerOverride">The Action to modify the WebRequestHandler with</param>
-#if !CORECLR
+#if !(NETSTANDARD || NETCOREAPP)
         public ConsulClient(Action<ConsulClientConfiguration> configOverride, Action<HttpClient> clientOverride, Action<WebRequestHandler> handlerOverride)
 #else
         public ConsulClient(Action<ConsulClientConfiguration> configOverride, Action<HttpClient> clientOverride, Action<HttpClientHandler> handlerOverride)
@@ -526,11 +522,11 @@ namespace Consul
             ApplyConfig(sender as ConsulClientConfiguration, HttpHandler, HttpClient);
 
         }
-#if !CORECLR
+#if !(NETSTANDARD || NETCOREAPP)
         void ApplyConfig(ConsulClientConfiguration config, WebRequestHandler handler, HttpClient client)
 #else
         void ApplyConfig(ConsulClientConfiguration config, HttpClientHandler handler, HttpClient client)
-#endif        
+#endif
         {
 #pragma warning disable CS0618 // Type or member is obsolete
             if (config.HttpAuth != null)
@@ -559,7 +555,7 @@ namespace Consul
                 }
             }
 #endif
-#if !CORECLR
+#if !(NETSTANDARD || NETCOREAPP)
 #pragma warning disable CS0618 // Type or member is obsolete
             if (config.DisableServerCertificateValidation)
 #pragma warning restore CS0618 // Type or member is obsolete
@@ -595,67 +591,67 @@ namespace Consul
 
         internal GetRequest<TOut> Get<TOut>(string path, QueryOptions opts = null, IEncodable filter = null)
         {
-            return new GetRequest<TOut>(this, path, opts ?? QueryOptions.Default, filter);
+            return new GetRequest<TOut>(this, path, opts, filter);
         }
 
         internal GetRequest Get(string path, QueryOptions opts = null)
         {
-            return new GetRequest(this, path, opts ?? QueryOptions.Default);
+            return new GetRequest(this, path, opts);
         }
 
         internal DeleteReturnRequest<TOut> DeleteReturning<TOut>(string path, WriteOptions opts = null)
         {
-            return new DeleteReturnRequest<TOut>(this, path, opts ?? WriteOptions.Default);
+            return new DeleteReturnRequest<TOut>(this, path, opts);
         }
 
         internal DeleteRequest Delete(string path, WriteOptions opts = null)
         {
-            return new DeleteRequest(this, path, opts ?? WriteOptions.Default);
+            return new DeleteRequest(this, path, opts);
         }
 
-        internal DeleteAcceptingRequest<TIn> DeleteAccepting<TIn>(string path, TIn body, WriteOptions opts = null)
+        internal DeleteAcceptingRequest<TIn> DeleteAccepting<TIn>(string path, TIn body, WriteOptions opts)
         {
-            return new DeleteAcceptingRequest<TIn>(this, path, body, opts ?? WriteOptions.Default);
+            return new DeleteAcceptingRequest<TIn>(this, path, body, opts);
         }
 
         internal PutReturningRequest<TOut> PutReturning<TOut>(string path, WriteOptions opts = null)
         {
-            return new PutReturningRequest<TOut>(this, path, opts ?? WriteOptions.Default);
+            return new PutReturningRequest<TOut>(this, path, opts);
         }
 
-        internal PutRequest<TIn> Put<TIn>(string path, TIn body, WriteOptions opts = null)
+        internal PutRequest<TIn> Put<TIn>(string path, TIn body, WriteOptions opts)
         {
-            return new PutRequest<TIn>(this, path, body, opts ?? WriteOptions.Default);
+            return new PutRequest<TIn>(this, path, body, opts);
         }
 
         internal PutNothingRequest PutNothing(string path, WriteOptions opts = null)
         {
-            return new PutNothingRequest(this, path, opts ?? WriteOptions.Default);
+            return new PutNothingRequest(this, path, opts);
         }
 
-        internal PutRequest<TIn, TOut> Put<TIn, TOut>(string path, TIn body, WriteOptions opts = null)
+        internal PutRequest<TIn, TOut> Put<TIn, TOut>(string path, TIn body, WriteOptions opts)
         {
-            return new PutRequest<TIn, TOut>(this, path, body, opts ?? WriteOptions.Default);
+            return new PutRequest<TIn, TOut>(this, path, body, opts);
         }
 
         internal PostReturningRequest<TOut> PostReturning<TOut>(string path, WriteOptions opts = null)
         {
-            return new PostReturningRequest<TOut>(this, path, opts ?? WriteOptions.Default);
+            return new PostReturningRequest<TOut>(this, path, opts);
         }
 
-        internal PostRequest<TIn> Post<TIn>(string path, TIn body, WriteOptions opts = null)
+        internal PostRequest<TIn> Post<TIn>(string path, TIn body, WriteOptions opts)
         {
-            return new PostRequest<TIn>(this, path, body, opts ?? WriteOptions.Default);
+            return new PostRequest<TIn>(this, path, body, opts);
         }
 
-        internal PostRequest<TIn, TOut> Post<TIn, TOut>(string path, TIn body, WriteOptions opts = null)
+        internal PostRequest<TIn, TOut> Post<TIn, TOut>(string path, TIn body, WriteOptions opts)
         {
-            return new PostRequest<TIn, TOut>(this, path, body, opts ?? WriteOptions.Default);
+            return new PostRequest<TIn, TOut>(this, path, body, opts);
         }
 
         internal PostRequest Post(string path, string body, WriteOptions opts = null)
         {
-            return new PostRequest(this, path, body, opts ?? WriteOptions.Default);
+            return new PostRequest(this, path, body, opts);
         }
     }
 }
