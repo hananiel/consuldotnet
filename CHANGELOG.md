@@ -1,11 +1,164 @@
 # Changelog
 
 ## Unreleased
-* Added the `Type` field to the `AgentCheck` and `HealthCheck` structures  
-* Added the possibility to specify more http request options and meta-data when registrating service checks. 
+
+> **Note:** Starting with version 1.8.0, Consul.NET versioning is now independent from the Consul server version. The project now follows standard semantic versioning (`MAJOR.MINOR.PATCH`).
+
+## 1.8.0
+* Add PublicApiAnalyzers to AspNetCore project (#585)
+* Make Consul.NET versioning independent of Consul versioning (#586)
+
+## 1.7.14.11
+* Add Create Exported Services List HTTP Endpoint (#543)
+* Add NodeIdentities Role Attribute (#547)
+* Implement ACL Binding Rule "Read" Endpoint (#550)
+* Implement ACL Binding Rule Update Endpoint (#551)
+* Implement ACL Binding Rule Delete Endpoint (#552)
+* Implement ACL Binding Rule List Endpoint (#556)
+* Add Microsoft.CodeAnalysis.PublicApiAnalyzers (#554), (#557)
+* Fix RS0026 (#559), (#560), (#561), (#562), (#563), (#564), (#566), (#567), (#568), (#569), (#570), (#571), (#573), (#575), (#574)
+
+## 1.7.14.10
+* Add create ACL Binding Rules (#506)
+* Add raft transfer leader (#489)
+* Add delete peering token by name (#523)
+* Add reading peering token by name (#521)
+* Add list peerings (#516)
+* Add generate peering token (#513)
+* Add list operator (#507)
+
+## 1.7.14.9
+* [BUG FIX]: Restore missing Services() overload - fix for broken ABI compatibility (#496)
+
+## 1.7.14.8
+
+* Add support for reading Autopilot State (#484)
+* Add support for putting Autopilot Configuration (#486)
+* Add support for retrieving Autopilot Health (#481)
+* Add support for retrieving the current Autopilot Configuration (#476)
+* Add support for reading Self Tokens (#464)
+* Add support for reading Policies by name (#465)
+* Add support for reading a Templated Policy by name (#459)
+* Add support for previewing a Templated Policy by name (#462)
+* Add `filter` parameter to list all Services in catalog (#456)
+* Add support for checking Intention Results (#447)
+* Add support for listing matching Intentions (#443)
+* Add support for reading Intentions by name (#442)
+* Add support for deleting Intentions by name (#441)
+* Add support for upserting Intentions by name (#435)
+* Add support for retrieving a list of all configured Intentions (#427)
+
+## 1.7.14.7
+
+* Do not use static JsonConvert (#417)
+* Embed PDBs (#412)
+* Add support for Update CA Configuration (#411)
+* Add support for CAGetConfiguration (#404)
+
+## 1.7.14.6
+* Fix parsing a string based host name (#401)
+* Add support for connect List CA Roots (#400)
+
+## 1.7.14.5
+* Restore default port 8500 for CONSUL_HTTP_ADDR (#395)
+* Add support for deleting Network Area (#393)
+* Add support for updating Network Area (#389)
+* Add support for getting Network Area (#392) 
+* Add support for creating Network Area (#382) 
+* Add support for discovery Chain Post (#378) 
+* Add support for list segments endpoint (#374) 
+* Add support for discovery chain get method (#369) 
+* Add support for explain prepared query API endpoint (#368)
+* Add GenerateDocumentationFile to make summaries show up in IDEs (#365)
+* Add GET List Ingress Health for Service (#350)
+
+## 1.7.14.4
+* Support for non-root consul urls (#333)
+* Added GET GatewayService endpoint (#347)
+* Added Update LAN Coordinates endpoints (#348)
+* Added ConnectAuthorize endpoint (#343)
+* Added Get CALeaf endpoint (#339)
+* Added GetCARoots with QueryOptions parameter (#338)
+* Added Connect CA Roots endpoint (#332)
+* Support for listing nodes for connect-capable service (#312)
+* Added Read LAN Coordinates for a specific node (#314)
+
+## 1.7.14.3
+* Added the Configuration property to the IConsulClient interface (#298)
+* Added Support for Getting Service Configuration (#278)
+
+## 1.7.14.2
+* Added support for agent version (#261)
+* Support for Listing Services for Node and Retrieving Nodes that support Mesh Capable Service (#273)
+* Support Listing and Deleting Configuration Entries (#271)
+* Support Applying Configuration and Get Configuration (#269)
+* Added support for agent host info (#259)
+* Added support for Agent Metrics (#263)
+* Implement local service health check (#240)
+
+## 1.7.14.1
+* Add ServiceTags to the health check endpoint (#244)
+* Write correct value for KV.Release (#237)
+* Introduce Namespace (#229)
+* Add support for logjson (#224)
+* Add support for agent cache (#225)
+* CI: Use enterprise build (#183)
+* Adding more filtering features (#219)
+* Basic Connect support for service registration on the agent (#216)
+
+## 1.6.10.9
+* Adding properties: AliasService, AliasNode to AgentServiceCheck class for support: (#202)
+* Update project url (#212)
+* Update CI, drop tests for old frameworks, add net7.0 (#213)
+
+## 1.6.10.8
+* Fix to correctly handle query TTL (#187)
+* Add `CheckId` to the `AgentServiceCheck` and mark the `ID` as obsolete (#185)
+
+## 1.6.10.7
+* Add support for `replace-existing-checks` parameter of service registration endpoint that allows to replace existing checks when re-registering a service (#155)
+* Update Newtonsoft.Json reference to version 13.0.1 (#160)
+
+## 1.6.10.6
+* Enforce ConfigureAwait(false) on the whole library (#148)
+* Resolve synchronous access deadlock by adding ‘ConfigureAwait(false)’ (#146)
+
+## 1.6.10.5
+* Check for LockTryOnce before delay (#21)
+* Add support for building and testing with .NET 6 (#135)
+
+## 1.6.10.4
+* Added the `TaggedAddresses` field to the `AgentService`, `CatalogService` and `AgentServiceRegistration` structures (#111)
+* Fix the equality check (#123)
+* Added filtering abilities into Agent.Services (#128)
+* Fixed serialization of TimeSpan to GoDuration (#129)
+
+## 1.6.10.3
+* Fix DLL versioning showing 0.0.0.0 (#112)
+
+## 1.6.10.2
+* Add support for net5.0 (#85).
+* Use ILRepack instead of ILMerge so .NETFramework builds on all platforms (#92)
+* Many CI and build improvements (#101, #96, #89, #100, #95):
+  * Unit tests are now run against several versions of the Consul server (1.6.10, 1.7.14, 1.8.14, 1.9.8, 1.10.1, as of this writing).
+  * Mono on Unix is used for test runs of target `net461`.
+* Initial release of Consul.AspNetCore after retrieving ownership. The versioning of both Consul.AspNetCore and Consul packages are aligned for simplicity.
+
+## 1.6.10.1
+* Add GRPC and GRPCUseTLS to the agent service check parameters (#22)
+* Compatibility with Consul 1.7.x - RoleLink & PolicyLink (#31)
+* Added the possibility to specify more http request options and meta-data when registering service checks (#39)
   It is now possible to specify the http Header(s) (`Headers`), `Method` and `Body` to be used for a given service check.
   A given service check might also now have an identifier (`ID`), `Name` and a description (`Notes`) associated.
-* Fix issue #24 removing constructor's Obsolete attribute for HttpClient injection
+* Added the `Type` field to the `AgentCheck` and `HealthCheck` structures (#42)
+* Fix issue #24 removing constructor's Obsolete attribute for HttpClient injection (#32)
+* Added asp net core integration - Consul.AspNetCore (#17)(#45)
+* Fixed lock and semaphore timeouts logic (#64)
+* Added service and node filtering abilities into Health.Service (#70)
+* Fixed NRE in Lock (#66)
+* Lock: Forward user cancellation token downstream (#67)
+* Pass WriteOptions parameter to correct parameter of Put(...) (#76)(#77)
+* Update consul to v1.6.10 (#78)
 
 ## 1.6.1.1
 * Fix issue #9 preventing use of the library with .NET Framework

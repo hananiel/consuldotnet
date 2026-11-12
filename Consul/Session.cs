@@ -18,30 +18,25 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Net;
-using System.Runtime.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
+
+#if !(NETSTANDARD || NETCOREAPP)
+    using System.Runtime.Serialization;
+#endif
 
 namespace Consul
 {
     public class SessionBehavior : IEquatable<SessionBehavior>
     {
-        private static readonly SessionBehavior release = new SessionBehavior() { Behavior = "release" };
-        private static readonly SessionBehavior delete = new SessionBehavior() { Behavior = "delete" };
-
         public string Behavior { get; private set; }
 
-        public static SessionBehavior Release
-        {
-            get { return release; }
-        }
+        public static SessionBehavior Release { get; } = new SessionBehavior { Behavior = "release" };
 
-        public static SessionBehavior Delete
-        {
-            get { return delete; }
-        }
+        public static SessionBehavior Delete { get; } = new SessionBehavior { Behavior = "delete" };
 
         public bool Equals(SessionBehavior other)
         {
@@ -51,8 +46,9 @@ namespace Consul
         public override bool Equals(object other)
         {
             // other could be a reference type, the is operator will return false if null
-            var a = other as SessionBehavior;
-            return a != null && Equals(a);
+            return other != null &&
+                   GetType() == other.GetType() &&
+                   Equals((SessionBehavior)other);
         }
 
         public override int GetHashCode()
@@ -89,7 +85,7 @@ namespace Consul
         }
     }
 
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
     [Serializable]
 #endif
     public class SessionExpiredException : Exception
@@ -97,7 +93,7 @@ namespace Consul
         public SessionExpiredException() { }
         public SessionExpiredException(string message) : base(message) { }
         public SessionExpiredException(string message, Exception inner) : base(message, inner) { }
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
         protected SessionExpiredException(
           SerializationInfo info,
           StreamingContext context) : base(info, context) { }
@@ -105,7 +101,7 @@ namespace Consul
 
     }
 
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
     [Serializable]
 #endif
     public class SessionCreationException : Exception
@@ -113,7 +109,7 @@ namespace Consul
         public SessionCreationException() { }
         public SessionCreationException(string message) : base(message) { }
         public SessionCreationException(string message, Exception inner) : base(message, inner) { }
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
         protected SessionCreationException(
           SerializationInfo info,
           StreamingContext context) : base(info, context) { }
@@ -151,12 +147,12 @@ namespace Consul
             Checks = new List<string>();
         }
 
-        public bool ShouldSerializeID()
+        public static bool ShouldSerializeID()
         {
             return false;
         }
 
-        public bool ShouldSerializeCreateIndex()
+        public static bool ShouldSerializeCreateIndex()
         {
             return false;
         }
@@ -213,32 +209,29 @@ namespace Consul
                 {
                     throw new ArgumentNullException(nameof(q));
                 }
-                var waitDuration = (int)(initialTTL.TotalMilliseconds / 2);
-                var lastRenewTime = DateTime.Now;
+                var waitDuration = TimeSpan.FromMilliseconds(initialTTL.TotalMilliseconds / 2);
+                var sw = Stopwatch.StartNew();
+                var ttl = initialTTL;
+
                 Exception lastException = new SessionExpiredException(string.Format("Session expired: {0}", id));
                 try
                 {
                     while (!ct.IsCancellationRequested)
                     {
-                        if (DateTime.Now.Subtract(lastRenewTime) > initialTTL)
+                        if (sw.Elapsed > ttl)
                         {
                             throw lastException;
-                        }
-                        try
-                        {
-                            await Task.Delay(waitDuration, ct).ConfigureAwait(false);
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            // Ignore OperationCanceledException because it means the wait cancelled in response to a CancellationToken being cancelled.
                         }
 
                         try
                         {
+                            await Task.Delay(waitDuration, ct).ConfigureAwait(false);
+
                             var res = await Renew(id, q).ConfigureAwait(false);
-                            initialTTL = res.Response.TTL ?? TimeSpan.Zero;
-                            waitDuration = (int)(initialTTL.TotalMilliseconds / 2);
-                            lastRenewTime = DateTime.Now;
+                            // Handle the server updating the TTL
+                            ttl = res.Response.TTL ?? TimeSpan.Zero;
+                            waitDuration = TimeSpan.FromMilliseconds(ttl.TotalMilliseconds / 2);
+                            sw = Stopwatch.StartNew();
                         }
                         catch (SessionExpiredException)
                         {
@@ -250,7 +243,7 @@ namespace Consul
                         }
                         catch (Exception ex)
                         {
-                            waitDuration = 1000;
+                            waitDuration = TimeSpan.FromSeconds(1);
                             lastException = ex;
                         }
                     }
@@ -268,21 +261,31 @@ namespace Consul
         /// <summary>
         /// Create makes a new session. Providing a session entry can customize the session. It can also be null to use defaults.
         /// </summary>
-        /// <param name="se">The SessionEntry options to use</param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns>A write result containing the new session ID</returns>
 
-        public Task<WriteResult<string>> Create(CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<string>> Create(CancellationToken ct)
         {
             return Create(null, WriteOptions.Default, ct);
+        }
+
+        public Task<WriteResult<string>> Create()
+        {
+            return Create(null, WriteOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
         /// Create makes a new session with default options.
         /// </summary>
         /// <returns>A write result containing the new session ID</returns>
-        public Task<WriteResult<string>> Create(SessionEntry se, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<string>> Create(SessionEntry se, CancellationToken ct)
         {
             return Create(se, WriteOptions.Default, ct);
+        }
+
+        public Task<WriteResult<string>> Create(SessionEntry se)
+        {
+            return Create(se, WriteOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -290,8 +293,9 @@ namespace Consul
         /// </summary>
         /// <param name="se">The SessionEntry options to use</param>
         /// <param name="q">Customized write options</param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns>A write result containing the new session ID</returns>
-        public async Task<WriteResult<string>> Create(SessionEntry se, WriteOptions q, CancellationToken ct = default(CancellationToken))
+        public async Task<WriteResult<string>> Create(SessionEntry se, WriteOptions q, CancellationToken ct = default)
         {
             var res = await _client.Put<SessionEntry, SessionCreationResult>("/v1/session/create", se, q).Execute(ct).ConfigureAwait(false);
             return new WriteResult<string>(res, res.Response.ID);
@@ -299,19 +303,30 @@ namespace Consul
         /// <summary>
         /// CreateNoChecks is like Create but is used specifically to create a session with no associated health checks.
         /// </summary>
-        public Task<WriteResult<string>> CreateNoChecks(CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<string>> CreateNoChecks(CancellationToken ct)
         {
             return CreateNoChecks(null, WriteOptions.Default, ct);
+        }
+
+        public Task<WriteResult<string>> CreateNoChecks()
+        {
+            return CreateNoChecks(null, WriteOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
         /// CreateNoChecks is like Create but is used specifically to create a session with no associated health checks.
         /// </summary>
         /// <param name="se">The SessionEntry options to use</param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns>A write result containing the new session ID</returns>
-        public Task<WriteResult<string>> CreateNoChecks(SessionEntry se, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<string>> CreateNoChecks(SessionEntry se, CancellationToken ct)
         {
             return CreateNoChecks(se, WriteOptions.Default, ct);
+        }
+
+        public Task<WriteResult<string>> CreateNoChecks(SessionEntry se)
+        {
+            return CreateNoChecks(se, WriteOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -319,12 +334,13 @@ namespace Consul
         /// </summary>
         /// <param name="se">The SessionEntry options to use</param>
         /// <param name="q">Customized write options</param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns>A write result containing the new session ID</returns>
-        public Task<WriteResult<string>> CreateNoChecks(SessionEntry se, WriteOptions q, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<string>> CreateNoChecks(SessionEntry se, WriteOptions q, CancellationToken ct = default)
         {
             if (se == null)
             {
-                return Create(null, q);
+                return Create(null, q, ct);
             }
             var noChecksEntry = new SessionEntry()
             {
@@ -342,10 +358,16 @@ namespace Consul
         /// Destroy invalidates a given session
         /// </summary>
         /// <param name="id">The session ID to destroy</param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns>A write result containing the result of the session destruction</returns>
-        public Task<WriteResult<bool>> Destroy(string id, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<bool>> Destroy(string id, CancellationToken ct)
         {
             return Destroy(id, WriteOptions.Default, ct);
+        }
+
+        public Task<WriteResult<bool>> Destroy(string id)
+        {
+            return Destroy(id, WriteOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -353,8 +375,9 @@ namespace Consul
         /// </summary>
         /// <param name="id">The session ID to destroy</param>
         /// <param name="q">Customized write options</param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns>A write result containing the result of the session destruction</returns>
-        public Task<WriteResult<bool>> Destroy(string id, WriteOptions q, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<bool>> Destroy(string id, WriteOptions q, CancellationToken ct = default)
         {
             return _client.Put<object, bool>(string.Format("/v1/session/destroy/{0}", id), null, q).Execute(ct);
         }
@@ -363,10 +386,16 @@ namespace Consul
         /// Info looks up a single session
         /// </summary>
         /// <param name="id">The session ID to look up</param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns>A query result containing the session information, or an empty query result if the session entry does not exist</returns>
-        public Task<QueryResult<SessionEntry>> Info(string id, CancellationToken ct = default(CancellationToken))
+        public Task<QueryResult<SessionEntry>> Info(string id, CancellationToken ct)
         {
             return Info(id, QueryOptions.Default, ct);
+        }
+
+        public Task<QueryResult<SessionEntry>> Info(string id)
+        {
+            return Info(id, QueryOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -374,8 +403,9 @@ namespace Consul
         /// </summary>
         /// <param name="id">The session ID to look up</param>
         /// <param name="q">Customized query options</param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns>A query result containing the session information, or an empty query result if the session entry does not exist</returns>
-        public async Task<QueryResult<SessionEntry>> Info(string id, QueryOptions q, CancellationToken ct = default(CancellationToken))
+        public async Task<QueryResult<SessionEntry>> Info(string id, QueryOptions q, CancellationToken ct = default)
         {
             var res = await _client.Get<SessionEntry[]>(string.Format("/v1/session/info/{0}", id), q).Execute(ct).ConfigureAwait(false);
             return new QueryResult<SessionEntry>(res, res.Response != null && res.Response.Length > 0 ? res.Response[0] : null);
@@ -385,17 +415,23 @@ namespace Consul
         /// List gets all active sessions
         /// </summary>
         /// <returns>A query result containing list of all sessions, or an empty query result if no sessions exist</returns>
-        public Task<QueryResult<SessionEntry[]>> List(CancellationToken ct = default(CancellationToken))
+        public Task<QueryResult<SessionEntry[]>> List(CancellationToken ct)
         {
             return List(QueryOptions.Default, ct);
+        }
+
+        public Task<QueryResult<SessionEntry[]>> List()
+        {
+            return List(QueryOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
         /// List gets all active sessions
         /// </summary>
         /// <param name="q">Customized query options</param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns>A query result containing the list of sessions, or an empty query result if no sessions exist</returns>
-        public Task<QueryResult<SessionEntry[]>> List(QueryOptions q, CancellationToken ct = default(CancellationToken))
+        public Task<QueryResult<SessionEntry[]>> List(QueryOptions q, CancellationToken ct = default)
         {
             return _client.Get<SessionEntry[]>("/v1/session/list", q).Execute(ct);
         }
@@ -404,10 +440,16 @@ namespace Consul
         /// Node gets all sessions for a node
         /// </summary>
         /// <param name="node">The node ID</param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns>A query result containing the list of sessions, or an empty query result if no sessions exist</returns>
-        public Task<QueryResult<SessionEntry[]>> Node(string node, CancellationToken ct = default(CancellationToken))
+        public Task<QueryResult<SessionEntry[]>> Node(string node, CancellationToken ct)
         {
             return Node(node, QueryOptions.Default, ct);
+        }
+
+        public Task<QueryResult<SessionEntry[]>> Node(string node)
+        {
+            return Node(node, QueryOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -415,8 +457,9 @@ namespace Consul
         /// </summary>
         /// <param name="node">The node ID</param>
         /// <param name="q">Customized query options</param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns>A query result containing the list of sessions, or an empty query result if no sessions exist</returns>
-        public Task<QueryResult<SessionEntry[]>> Node(string node, QueryOptions q, CancellationToken ct = default(CancellationToken))
+        public Task<QueryResult<SessionEntry[]>> Node(string node, QueryOptions q, CancellationToken ct = default)
         {
             return _client.Get<SessionEntry[]>(string.Format("/v1/session/node/{0}", node), q).Execute(ct);
         }
@@ -425,10 +468,16 @@ namespace Consul
         /// Renew renews the TTL on a given session
         /// </summary>
         /// <param name="id">The session ID to renew</param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns>An updated session entry</returns>
-        public Task<WriteResult<SessionEntry>> Renew(string id, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<SessionEntry>> Renew(string id, CancellationToken ct)
         {
             return Renew(id, WriteOptions.Default, ct);
+        }
+
+        public Task<WriteResult<SessionEntry>> Renew(string id)
+        {
+            return Renew(id, WriteOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -436,10 +485,11 @@ namespace Consul
         /// </summary>
         /// <param name="id">The session ID to renew</param>
         /// <param name="q">Customized write options</param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns>An updated session entry</returns>
-        public async Task<WriteResult<SessionEntry>> Renew(string id, WriteOptions q, CancellationToken ct = default(CancellationToken))
+        public async Task<WriteResult<SessionEntry>> Renew(string id, WriteOptions q, CancellationToken ct = default)
         {
-            var res = await _client.Put<object, SessionEntry[]>(string.Format("/v1/session/renew/{0}", id), q).Execute(ct).ConfigureAwait(false);
+            var res = await _client.Put<object, SessionEntry[]>(string.Format("/v1/session/renew/{0}", id), null, q).Execute(ct).ConfigureAwait(false);
             if (res.StatusCode == HttpStatusCode.NotFound)
             {
                 throw new SessionExpiredException(string.Format("Session expired: {0}", id));
@@ -450,14 +500,9 @@ namespace Consul
 
     public partial class ConsulClient : IConsulClient
     {
-        private Lazy<Session> _session;
-
         /// <summary>
         /// Session returns a handle to the session endpoint
         /// </summary>
-        public ISessionEndpoint Session
-        {
-            get { return _session.Value; }
-        }
+        public ISessionEndpoint Session { get; private set; }
     }
 }

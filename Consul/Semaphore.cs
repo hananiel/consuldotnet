@@ -19,19 +19,20 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
 using System.Security.Permissions;
 using System.Runtime.Serialization;
 #endif
 
 namespace Consul
 {
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
     [Serializable]
 #endif
     public class SemaphoreLimitConflictException : Exception
@@ -57,7 +58,7 @@ namespace Consul
             LocalLimit = localLimit;
         }
 
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
         protected SemaphoreLimitConflictException(
           SerializationInfo info,
           StreamingContext context) : base(info, context) { }
@@ -73,7 +74,7 @@ namespace Consul
 #endif
     }
 
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
     [Serializable]
 #endif
     public class SemaphoreHeldException : Exception
@@ -91,14 +92,14 @@ namespace Consul
             : base(message, inner)
         {
         }
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
         protected SemaphoreHeldException(
           SerializationInfo info,
           StreamingContext context) : base(info, context) { }
 #endif
     }
 
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
     [Serializable]
 #endif
     public class SemaphoreNotHeldException : Exception
@@ -116,14 +117,14 @@ namespace Consul
             : base(message, inner)
         {
         }
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
         protected SemaphoreNotHeldException(
           SerializationInfo info,
           StreamingContext context) : base(info, context) { }
 #endif
     }
 
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
     [Serializable]
 #endif
     public class SemaphoreInUseException : Exception
@@ -142,7 +143,7 @@ namespace Consul
         {
         }
 
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
         protected SemaphoreInUseException(
           SerializationInfo info,
           StreamingContext context) : base(info, context) { }
@@ -150,7 +151,7 @@ namespace Consul
 
     }
 
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
     [Serializable]
 #endif
     public class SemaphoreConflictException : Exception
@@ -168,14 +169,14 @@ namespace Consul
             : base(message, inner)
         {
         }
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
         protected SemaphoreConflictException(
           SerializationInfo info,
           StreamingContext context) : base(info, context) { }
 #endif
     }
 
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
     [Serializable]
 #endif
     public class SemaphoreMaxAttemptsReachedException : Exception
@@ -183,7 +184,7 @@ namespace Consul
         public SemaphoreMaxAttemptsReachedException() { }
         public SemaphoreMaxAttemptsReachedException(string message) : base(message) { }
         public SemaphoreMaxAttemptsReachedException(string message, Exception inner) : base(message, inner) { }
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
         protected SemaphoreMaxAttemptsReachedException(
           SerializationInfo info,
           StreamingContext context) : base(info, context) { }
@@ -267,6 +268,7 @@ namespace Consul
         private Task _sessionRenewTask;
         private Task _monitorTask;
 
+        private readonly JsonSerializer _serializer = new JsonSerializer();
         internal SemaphoreOptions Opts { get; set; }
 
         public bool IsHeld
@@ -348,7 +350,7 @@ namespace Consul
                         LockSession = Opts.Session;
                     }
 
-                    var contender = (await _client.KV.Acquire(ContenderEntry(LockSession)).ConfigureAwait(false)).Response;
+                    var contender = (await _client.KV.Acquire(ContenderEntry(LockSession), ct).ConfigureAwait(false)).Response;
                     if (!contender)
                     {
                         DisposeCancellationTokenSource();
@@ -381,7 +383,7 @@ namespace Consul
                         QueryResult<KVPair[]> pairs;
                         try
                         {
-                            pairs = await _client.KV.List(Opts.Prefix, qOpts).ConfigureAwait(false);
+                            pairs = await _client.KV.List(Opts.Prefix, qOpts, ct).ConfigureAwait(false);
                         }
                         catch (Exception ex)
                         {
@@ -424,7 +426,7 @@ namespace Consul
                         }
 
                         // Handle the case of not getting the lock
-                        if (!(await _client.KV.CAS(newLock).ConfigureAwait(false)).Response)
+                        if (!(await _client.KV.CAS(newLock, ct).ConfigureAwait(false)).Response)
                         {
                             continue;
                         }
@@ -442,7 +444,7 @@ namespace Consul
                 if (ct.IsCancellationRequested || (!IsHeld && !string.IsNullOrEmpty(Opts.Session)))
                 {
                     DisposeCancellationTokenSource();
-                    await _client.KV.Delete(ContenderEntry(LockSession).Key).ConfigureAwait(false);
+                    await _client.KV.Delete(ContenderEntry(LockSession).Key, ct).ConfigureAwait(false);
                     if (_sessionRenewTask != null)
                     {
                         try
@@ -462,7 +464,7 @@ namespace Consul
         /// <summary>
         /// Release is used to voluntarily give up our semaphore slot. It is an error to call this if the semaphore has not been acquired.
         /// </summary>
-        public async Task Release(CancellationToken ct = default(CancellationToken))
+        public async Task Release(CancellationToken ct = default)
         {
             try
             {
@@ -531,7 +533,7 @@ namespace Consul
         /// <summary>
         /// Destroy is used to cleanup the semaphore entry. It is not necessary to invoke. It will fail if the semaphore is in use.
         /// </summary>
-        public async Task Destroy(CancellationToken ct = default(CancellationToken))
+        public async Task Destroy(CancellationToken ct = default)
         {
             using (await _mutex.LockAsync().ConfigureAwait(false))
             {
@@ -721,14 +723,17 @@ namespace Consul
         /// <returns>A K/V pair with the lock data encoded in the Value field</returns>
         private KVPair EncodeLock(SemaphoreLock l, ulong oldIndex)
         {
-            var jsonValue = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(l));
-
-            return new KVPair(string.Join("/", Opts.Prefix, DefaultSemaphoreKey))
+            using (var sw = new StringWriter())
             {
-                Value = jsonValue,
-                Flags = SemaphoreFlagValue,
-                ModifyIndex = oldIndex
-            };
+                _serializer.Serialize(sw, l);
+                var jsonValue = Encoding.UTF8.GetBytes(sw.ToString());
+                return new KVPair(string.Join("/", Opts.Prefix, DefaultSemaphoreKey))
+                {
+                    Value = jsonValue,
+                    Flags = SemaphoreFlagValue,
+                    ModifyIndex = oldIndex
+                };
+            }
         }
 
         /// <summary>
@@ -787,13 +792,13 @@ namespace Consul
         /// <summary>
         /// DefaultSemaphoreSessionTTL is the default session TTL if no Session is provided when creating a new Semaphore. This is used because we do not have any other check to depend upon.
         /// </summary>
-        private readonly TimeSpan DefaultLockSessionTTL = TimeSpan.FromSeconds(15);
+        private readonly TimeSpan _defaultLockSessionTTL = TimeSpan.FromSeconds(15);
 
         private string _prefix;
 
         public string Prefix
         {
-            get { return _prefix; }
+            get => _prefix;
             set
             {
                 if (!string.IsNullOrEmpty(value))
@@ -811,7 +816,7 @@ namespace Consul
 
         public int Limit
         {
-            get { return _limit; }
+            get => _limit;
             set
             {
                 if (value > 0)
@@ -839,7 +844,7 @@ namespace Consul
             Prefix = prefix;
             Limit = limit;
             SessionName = DefaultLockSessionName;
-            SessionTTL = DefaultLockSessionTTL;
+            SessionTTL = _defaultLockSessionTTL;
             MonitorRetryTime = Semaphore.DefaultMonitorRetryTime;
             SemaphoreWaitTime = Semaphore.DefaultSemaphoreWaitTime;
         }
@@ -878,7 +883,7 @@ namespace Consul
             }
             return new Semaphore(this) { Opts = opts };
         }
-        public Task<IDistributedSemaphore> AcquireSemaphore(string prefix, int limit, CancellationToken ct = default(CancellationToken))
+        public Task<IDistributedSemaphore> AcquireSemaphore(string prefix, int limit, CancellationToken ct = default)
         {
             if (string.IsNullOrEmpty(prefix))
             {
@@ -890,7 +895,7 @@ namespace Consul
             }
             return AcquireSemaphore(new SemaphoreOptions(prefix, limit), ct);
         }
-        public async Task<IDistributedSemaphore> AcquireSemaphore(SemaphoreOptions opts, CancellationToken ct = default(CancellationToken))
+        public async Task<IDistributedSemaphore> AcquireSemaphore(SemaphoreOptions opts, CancellationToken ct)
         {
             if (opts == null)
             {
@@ -902,7 +907,12 @@ namespace Consul
             return semaphore;
         }
 
-        public Task ExecuteInSemaphore(string prefix, int limit, Action a, CancellationToken ct = default(CancellationToken))
+        public async Task<IDistributedSemaphore> AcquireSemaphore(SemaphoreOptions opts)
+        {
+            return await AcquireSemaphore(opts, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        public Task ExecuteInSemaphore(string prefix, int limit, Action a, CancellationToken ct = default)
         {
             if (string.IsNullOrEmpty(prefix))
             {
@@ -915,7 +925,7 @@ namespace Consul
             return ExecuteInSemaphore(new SemaphoreOptions(prefix, limit), a, ct);
         }
 
-        public async Task ExecuteInSemaphore(SemaphoreOptions opts, Action a, CancellationToken ct = default(CancellationToken))
+        public async Task ExecuteInSemaphore(SemaphoreOptions opts, Action a, CancellationToken ct)
         {
             if (opts == null)
             {
@@ -940,6 +950,11 @@ namespace Consul
             {
                 await semaphore.Release(ct).ConfigureAwait(false);
             }
+        }
+
+        public async Task ExecuteInSemaphore(SemaphoreOptions opts, Action a)
+        {
+            await ExecuteInSemaphore(opts, a, CancellationToken.None).ConfigureAwait(false);
         }
     }
 }

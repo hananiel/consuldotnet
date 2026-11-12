@@ -30,25 +30,10 @@ namespace Consul.Test
     // These tests are slow, so we put them into separate collection so they can run in parallel to other tests.
     [Trait("speed", "slow")]
     [Collection("SemaphoreTest")]
-    public class SemaphoreTest : IDisposable
+    public class SemaphoreTest : BaseFixture
     {
-        private ConsulClient _client;
         const int DefaultSessionTTLSeconds = 10;
         const int LockWaitTimeSeconds = 15;
-
-        public SemaphoreTest()
-        {
-            _client = new ConsulClient(c =>
-            {
-                c.Token = TestHelper.MasterToken;
-                c.Address = TestHelper.HttpUri;
-            });
-        }
-
-        public void Dispose()
-        {
-            _client.Dispose();
-        }
 
         [Fact]
         public async Task Semaphore_BadLimit()
@@ -99,12 +84,14 @@ namespace Consul.Test
         public async Task Semaphore_OneShot()
         {
             const string keyName = "test/semaphore/oneshot";
+            TimeSpan waitTime = TimeSpan.FromMilliseconds(3000);
+
             var semaphoreOptions = new SemaphoreOptions(keyName, 2)
             {
                 SemaphoreTryOnce = true
             };
 
-            semaphoreOptions.SemaphoreWaitTime = TimeSpan.FromMilliseconds(1000);
+            semaphoreOptions.SemaphoreWaitTime = waitTime;
 
             var semaphoreKey = _client.Semaphore(semaphoreOptions);
 
@@ -114,7 +101,7 @@ namespace Consul.Test
             var another = _client.Semaphore(new SemaphoreOptions(keyName, 2)
             {
                 SemaphoreTryOnce = true,
-                SemaphoreWaitTime = TimeSpan.FromMilliseconds(1000)
+                SemaphoreWaitTime = waitTime
             });
 
             await another.Acquire();
@@ -124,7 +111,7 @@ namespace Consul.Test
             var contender = _client.Semaphore(new SemaphoreOptions(keyName, 2)
             {
                 SemaphoreTryOnce = true,
-                SemaphoreWaitTime = TimeSpan.FromMilliseconds(1000)
+                SemaphoreWaitTime = waitTime
             });
 
             var stopwatch = Stopwatch.StartNew();

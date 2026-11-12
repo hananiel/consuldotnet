@@ -65,8 +65,9 @@ namespace Consul
         public override bool Equals(object other)
 #pragma warning restore CS0809 // Obsolete member 'ACLType.Equals(object)' overrides non-obsolete member
         {
-            var a = other as ACLType;
-            return a != null && Equals(a);
+            return other != null &&
+                   GetType() == other.GetType() &&
+                   Equals((ACLType)other);
         }
 
 #pragma warning disable CS0809 // Obsolete member 'ACLType.Equals(object)' overrides non-obsolete member
@@ -201,9 +202,10 @@ namespace Consul
         /// [Deprecated] Create is used to generate a new token with the given parameters
         /// </summary>
         /// <param name="acl">The ACL entry to create</param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns>A write result containing the newly created ACL token</returns>
         [Obsolete("The Legacy ACL system has been deprecated, please use Token, Role and Policy instead.")]
-        public Task<WriteResult<string>> Create(ACLEntry acl, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<string>> Create(ACLEntry acl, CancellationToken ct = default)
         {
             return Create(acl, WriteOptions.Default, ct);
         }
@@ -213,9 +215,10 @@ namespace Consul
         /// </summary>
         /// <param name="acl">The ACL entry to create</param>
         /// <param name="q">Customized write options</param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns>A write result containing the newly created ACL token</returns>
         [Obsolete("The Legacy ACL system has been deprecated, please use Token, Role and Policy instead.")]
-        public async Task<WriteResult<string>> Create(ACLEntry acl, WriteOptions q, CancellationToken ct = default(CancellationToken))
+        public async Task<WriteResult<string>> Create(ACLEntry acl, WriteOptions q, CancellationToken ct = default)
         {
             var res = await _client.Put<ACLEntry, ACLCreationResult>("/v1/acl/create", acl, q).Execute(ct).ConfigureAwait(false);
             return new WriteResult<string>(res, res.Response.ID);
@@ -225,9 +228,10 @@ namespace Consul
         /// [Deprecated] Update is used to update the rules of an existing token
         /// </summary>
         /// <param name="acl">The ACL entry to update</param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns>An empty write result</returns>
         [Obsolete("The Legacy ACL system has been deprecated, please use Token, Role and Policy instead.")]
-        public Task<WriteResult> Update(ACLEntry acl, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult> Update(ACLEntry acl, CancellationToken ct = default)
         {
             return Update(acl, WriteOptions.Default, ct);
         }
@@ -237,9 +241,10 @@ namespace Consul
         /// </summary>
         /// <param name="acl">The ACL entry to update</param>
         /// <param name="q">Customized write options</param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns>An empty write result</returns>
         [Obsolete("The Legacy ACL system has been deprecated, please use Token, Role and Policy instead.")]
-        public Task<WriteResult> Update(ACLEntry acl, WriteOptions q, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult> Update(ACLEntry acl, WriteOptions q, CancellationToken ct = default)
         {
             return _client.Put("/v1/acl/update", acl, q).Execute(ct);
         }
@@ -248,9 +253,10 @@ namespace Consul
         /// [Deprecated] Destroy is used to destroy a given ACL token ID
         /// </summary>
         /// <param name="id">The ACL ID to destroy</param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns>An empty write result</returns>
         [Obsolete("The Legacy ACL system has been deprecated, please use Token, Role and Policy instead.")]
-        public Task<WriteResult<bool>> Destroy(string id, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<bool>> Destroy(string id, CancellationToken ct = default)
         {
             return Destroy(id, WriteOptions.Default, ct);
         }
@@ -260,9 +266,10 @@ namespace Consul
         /// </summary>
         /// <param name="id">The ACL ID to destroy</param>
         /// <param name="q">Customized write options</param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns>An empty write result</returns>
         [Obsolete("The Legacy ACL system has been deprecated, please use Token, Role and Policy instead.")]
-        public Task<WriteResult<bool>> Destroy(string id, WriteOptions q, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<bool>> Destroy(string id, WriteOptions q, CancellationToken ct = default)
         {
             return _client.PutReturning<bool>(string.Format("/v1/acl/destroy/{0}", id), q).Execute(ct);
         }
@@ -271,9 +278,10 @@ namespace Consul
         /// [Deprecated] Clone is used to return a new token cloned from an existing one
         /// </summary>
         /// <param name="id">The ACL ID to clone</param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns>A write result containing the newly created ACL token</returns>
         [Obsolete("The Legacy ACL system has been deprecated, please use Token, Role and Policy instead.")]
-        public Task<WriteResult<string>> Clone(string id, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<string>> Clone(string id, CancellationToken ct = default)
         {
             return Clone(id, WriteOptions.Default, ct);
         }
@@ -283,9 +291,10 @@ namespace Consul
         /// </summary>
         /// <param name="id">The ACL ID to clone</param>
         /// <param name="q">Customized write options</param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns>A write result containing the newly created ACL token</returns>
         [Obsolete("The Legacy ACL system has been deprecated, please use Token, Role and Policy instead.")]
-        public async Task<WriteResult<string>> Clone(string id, WriteOptions q, CancellationToken ct = default(CancellationToken))
+        public async Task<WriteResult<string>> Clone(string id, WriteOptions q, CancellationToken ct = default)
         {
             var res = await _client.PutReturning<ACLCreationResult>(string.Format("/v1/acl/clone/{0}", id), q).Execute(ct).ConfigureAwait(false);
             return new WriteResult<string>(res, res.Response.ID);
@@ -295,9 +304,10 @@ namespace Consul
         /// [Deprecated] Info is used to query for information about an ACL token
         /// </summary>
         /// <param name="id">The ACL ID to request information about</param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns>A query result containing the ACL entry matching the provided ID, or a query result with a null response if no token matched the provided ID</returns>
         [Obsolete("The Legacy ACL system has been deprecated, please use Token, Role and Policy instead.")]
-        public Task<QueryResult<ACLEntry>> Info(string id, CancellationToken ct = default(CancellationToken))
+        public Task<QueryResult<ACLEntry>> Info(string id, CancellationToken ct = default)
         {
             return Info(id, QueryOptions.Default, ct);
         }
@@ -310,7 +320,7 @@ namespace Consul
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A query result containing the ACL entry matching the provided ID, or a query result with a null response if no token matched the provided ID</returns>
         [Obsolete("The Legacy ACL system has been deprecated, please use Token, Role and Policy instead.")]
-        public async Task<QueryResult<ACLEntry>> Info(string id, QueryOptions q, CancellationToken ct = default(CancellationToken))
+        public async Task<QueryResult<ACLEntry>> Info(string id, QueryOptions q, CancellationToken ct = default)
         {
             var res = await _client.Get<ACLEntry[]>(string.Format("/v1/acl/info/{0}", id), q).Execute(ct).ConfigureAwait(false);
             return new QueryResult<ACLEntry>(res, res.Response != null && res.Response.Length > 0 ? res.Response[0] : null);
@@ -321,7 +331,7 @@ namespace Consul
         /// </summary>
         /// <returns>A write result containing the list of all ACLs</returns>
         [Obsolete("The Legacy ACL system has been deprecated, please use Token, Role and Policy instead.")]
-        public Task<QueryResult<ACLEntry[]>> List(CancellationToken ct = default(CancellationToken))
+        public Task<QueryResult<ACLEntry[]>> List(CancellationToken ct = default)
         {
             return List(QueryOptions.Default, ct);
         }
@@ -333,7 +343,7 @@ namespace Consul
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A write result containing the list of all ACLs</returns>
         [Obsolete("The Legacy ACL system has been deprecated, please use Token, Role and Policy instead.")]
-        public Task<QueryResult<ACLEntry[]>> List(QueryOptions q, CancellationToken ct = default(CancellationToken))
+        public Task<QueryResult<ACLEntry[]>> List(QueryOptions q, CancellationToken ct = default)
         {
             return _client.Get<ACLEntry[]>("/v1/acl/list", q).Execute(ct);
         }
@@ -345,7 +355,7 @@ namespace Consul
         /// <param name="ct">>Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A string containing the translated rule(s)</returns>
         [Obsolete("The Legacy ACL system has been deprecated, please use Token, Role and Policy instead.")]
-        public Task<WriteResult<string>> TranslateRules(string rules, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<string>> TranslateRules(string rules, CancellationToken ct = default)
         {
             return TranslateRules(rules, WriteOptions.Default, ct);
         }
@@ -358,7 +368,7 @@ namespace Consul
         /// <param name="ct">>Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A string containing the translated rule(s)</returns>
         [Obsolete("The Legacy ACL system has been deprecated, please use Token, Role and Policy instead.")]
-        public async Task<WriteResult<string>> TranslateRules(string rules, WriteOptions q, CancellationToken ct = default(CancellationToken))
+        public async Task<WriteResult<string>> TranslateRules(string rules, WriteOptions q, CancellationToken ct = default)
         {
 
             var res = await _client.Post($"/v1/acl/rules/translate", rules, q).Execute(ct).ConfigureAwait(false);
@@ -372,7 +382,7 @@ namespace Consul
         /// <param name="ct">>Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A string containing the translated rule(s)</returns>
         [Obsolete("The Legacy ACL system has been deprecated, please use Token, Role and Policy instead.")]
-        public Task<QueryResult<string>> TranslateLegacyTokenRules(string id, CancellationToken ct = default(CancellationToken))
+        public Task<QueryResult<string>> TranslateLegacyTokenRules(string id, CancellationToken ct = default)
         {
             return TranslateLegacyTokenRules(id, QueryOptions.Default, ct);
         }
@@ -385,7 +395,7 @@ namespace Consul
         /// <param name="ct">>Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A string containing the translated rule(s)</returns>
         [Obsolete("The Legacy ACL system has been deprecated, please use Token, Role and Policy instead.")]
-        public async Task<QueryResult<string>> TranslateLegacyTokenRules(string id, QueryOptions q, CancellationToken ct = default(CancellationToken))
+        public async Task<QueryResult<string>> TranslateLegacyTokenRules(string id, QueryOptions q, CancellationToken ct = default)
         {
             var res = await _client.Get($"/v1/acl/rules/translate/{id}", q).Execute(ct).ConfigureAwait(false);
             return new QueryResult<string>(res, res.Response);
@@ -394,17 +404,10 @@ namespace Consul
 
     public partial class ConsulClient : IConsulClient
     {
-#pragma warning disable CS0618 // Type or member is obsolete
-        private Lazy<ACL> _acl;
-#pragma warning restore CS0618 // Type or member is obsolete
-
         /// <summary>
         /// [Deprecated] ACL returns a handle to the ACL endpoints
         /// </summary>
         [Obsolete("The Legacy ACL system has been deprecated, please use Token, Role and Policy instead.")]
-        public IACLEndpoint ACL
-        {
-            get { return _acl.Value; }
-        }
+        public IACLEndpoint ACL { get; private set; }
     }
 }

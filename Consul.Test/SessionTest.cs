@@ -25,24 +25,8 @@ using Xunit;
 
 namespace Consul.Test
 {
-    public class SessionTest : IDisposable
+    public class SessionTest : BaseFixture
     {
-        private ConsulClient _client;
-
-        public SessionTest()
-        {
-            _client = new ConsulClient(c =>
-            {
-                c.Token = TestHelper.MasterToken;
-                c.Address = TestHelper.HttpUri;
-            });
-        }
-
-        public void Dispose()
-        {
-            _client.Dispose();
-        }
-
         [Fact]
         public async Task Session_CreateDestroy()
         {
@@ -154,7 +138,8 @@ namespace Consul.Test
         [Fact]
         public async Task Session_Create_RenewPeriodic_TTLExpire()
         {
-            var sessionRequest = await _client.Session.Create(new SessionEntry() { TTL = TimeSpan.FromSeconds(500) });
+            var initialTTL = TimeSpan.FromSeconds(10);
+            var sessionRequest = await _client.Session.Create(new SessionEntry() { TTL = initialTTL });
 
             var id = sessionRequest.Response;
             Assert.NotEqual(TimeSpan.Zero, sessionRequest.RequestTime);
@@ -165,10 +150,10 @@ namespace Consul.Test
 
             try
             {
-                var renewTask = _client.Session.RenewPeriodic(TimeSpan.FromSeconds(1), id, WriteOptions.Default, ct);
                 var destroyResponse = await _client.Session.Destroy(id);
+                var renewTask = _client.Session.RenewPeriodic(initialTTL, id, WriteOptions.Default, ct);
                 Assert.True(destroyResponse.Response);
-                renewTask.Wait(10000);
+                renewTask.Wait(4 * (int)initialTTL.TotalMilliseconds);
             }
             catch (AggregateException ae)
             {

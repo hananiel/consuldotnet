@@ -17,7 +17,6 @@
 //  </copyright>
 // -----------------------------------------------------------------------
 
-using System;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -30,8 +29,8 @@ namespace Consul
     {
         bool IsHeld { get; }
 
-        Task<CancellationToken> Acquire(CancellationToken ct = default(CancellationToken));
-        Task Destroy(CancellationToken ct = default(CancellationToken));
-        Task Release(CancellationToken ct = default(CancellationToken));
+        Task<CancellationToken> Acquire(CancellationToken ct = default);
+        Task Destroy(CancellationToken ct = default);
+        Task Release(CancellationToken ct = default);
     }
 }

@@ -18,21 +18,19 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
+using System.Text;
 using Newtonsoft.Json;
-#if !(CORECLR || PORTABLE || PORTABLE40)
-    using System.Security.Permissions;
-    using System.Runtime.Serialization;
-#endif
 
 namespace Consul
 {
     /// <summary>
     /// The consistency mode of a request.
     /// </summary>
-    /// <see cref="http://www.consul.io/docs/agent/http.html"/>
+    /// <remarks>
+    /// <seealso href="http://www.consul.io/docs/agent/http.html"/>
+    /// </remarks>
     public enum ConsistencyMode
     {
         /// <summary>
@@ -59,7 +57,7 @@ namespace Consul
         internal Stream ResponseStream { get; set; }
         internal string Endpoint { get; set; }
 
-        protected Stopwatch timer = new Stopwatch();
+        private readonly JsonSerializer _serializer = new JsonSerializer();
 
         internal ConsulRequest(ConsulClient client, string url, HttpMethod method)
         {
@@ -76,15 +74,20 @@ namespace Consul
             {
                 Params["wait"] = client.Config.WaitTime.Value.ToGoDuration();
             }
+            if (!string.IsNullOrEmpty(client.Config.Namespace))
+            {
+                Params["ns"] = client.Config.Namespace;
+            }
         }
 
         protected abstract void ApplyOptions(ConsulClientConfiguration clientConfig);
         protected abstract void ApplyHeaders(HttpRequestMessage message, ConsulClientConfiguration clientConfig);
 
-        protected Uri BuildConsulUri(string url, Dictionary<string, string> p)
+        protected internal Uri BuildConsulUri(string url, Dictionary<string, string> p)
         {
             var builder = new UriBuilder(Client.Config.Address);
-            builder.Path = url;
+            builder.Path += url;
+            builder.Path = builder.Path.Replace("//", "/");
 
             ApplyOptions(Client.Config);
 
@@ -112,14 +115,18 @@ namespace Consul
             {
                 using (var jsonReader = new JsonTextReader(reader))
                 {
-                    return Client.serializer.Deserialize<TOut>(jsonReader);
+                    return _serializer.Deserialize<TOut>(jsonReader);
                 }
             }
         }
 
         protected byte[] Serialize(object value)
         {
-            return System.Text.Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(value));
+            using (var sw = new StringWriter())
+            {
+                _serializer.Serialize(sw, value);
+                return Encoding.UTF8.GetBytes(sw.ToString());
+            }
         }
     }
 }

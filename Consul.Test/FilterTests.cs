@@ -16,7 +16,6 @@
 //  </copyright>
 // -----------------------------------------------------------------------
 
-using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Consul.Filtering;
@@ -25,24 +24,8 @@ using S = Consul.Filtering.Selectors;
 
 namespace Consul.Test
 {
-    public class FilterTests : IDisposable
+    public class FilterTests : BaseFixture
     {
-        private ConsulClient _client;
-
-        public FilterTests()
-        {
-            _client = new ConsulClient(c =>
-            {
-                c.Token = TestHelper.MasterToken;
-                c.Address = TestHelper.HttpUri;
-            });
-        }
-
-        public void Dispose()
-        {
-            _client.Dispose();
-        }
-
         private static void CheckEncoded(string expected, IEncodable expression) =>
             Assert.Equal(expected, expression.Encode());
 
@@ -62,7 +45,6 @@ namespace Consul.Test
 
         private static class ServiceConstants
         {
-            public static readonly string NodeName = "nodeName";
             public static readonly string ServiceId = "serviceId";
             public static readonly string Address = "1.1.1.1";
             public static readonly int Port = 1234;
@@ -189,6 +171,18 @@ namespace Consul.Test
         public void Filter_Selectors_Service()
         {
             CheckEncoded("Service", S.Service);
+        }
+
+        [Fact]
+        public void Filter_ServiceSelector_Equals()
+        {
+            CheckEncoded("Service == \"serviceName\"", S.Service == ServiceConstants.ServiceName);
+        }
+
+        [Fact]
+        public void Filter_ServiceSelector_NotEquals()
+        {
+            CheckEncoded("Service != \"serviceName\"", S.Service != ServiceConstants.ServiceName);
         }
 
         [Fact]

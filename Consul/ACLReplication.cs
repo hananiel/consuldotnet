@@ -91,9 +91,14 @@ namespace Consul
         /// </summary>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A query result with details of the ACL Replication system in Consul</returns>
-        public Task<QueryResult<ACLReplicationEntry>> Status(CancellationToken ct = default(CancellationToken))
+        public Task<QueryResult<ACLReplicationEntry>> Status(CancellationToken ct)
         {
             return Status(QueryOptions.Default, ct);
+        }
+
+        public Task<QueryResult<ACLReplicationEntry>> Status()
+        {
+            return Status(QueryOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -102,7 +107,7 @@ namespace Consul
         /// <param name="queryOptions">Any query options for the request</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A query result with details of the ACL Replication system in Consul</returns>
-        public async Task<QueryResult<ACLReplicationEntry>> Status(QueryOptions queryOptions, CancellationToken ct = default(CancellationToken))
+        public async Task<QueryResult<ACLReplicationEntry>> Status(QueryOptions queryOptions, CancellationToken ct = default)
         {
             var res = await _client.Get<ACLReplicationEntry>("/v1/acl/replication", queryOptions).Execute(ct).ConfigureAwait(false);
             return new QueryResult<ACLReplicationEntry>(res, res.Response);
@@ -111,14 +116,9 @@ namespace Consul
 
     public partial class ConsulClient : IConsulClient
     {
-        private Lazy<ACLReplication> _aclReplication;
-
         /// <summary>
         /// ACLReplication returns a handle to the ACLReplication endpoints
         /// </summary>
-        public IACLReplicationEndpoint ACLReplication
-        {
-            get { return _aclReplication.Value; }
-        }
+        public IACLReplicationEndpoint ACLReplication { get; private set; }
     }
 }

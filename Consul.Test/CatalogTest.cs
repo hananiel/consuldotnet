@@ -17,30 +17,18 @@
 //  </copyright>
 // -----------------------------------------------------------------------
 
-using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net;
 using System.Threading.Tasks;
+using Consul.Filtering;
+using NuGet.Versioning;
 using Xunit;
 
 namespace Consul.Test
 {
-    public class CatalogTest : IDisposable
+    public class CatalogTest : BaseFixture
     {
-        private ConsulClient _client;
-
-        public CatalogTest()
-        {
-            _client = new ConsulClient(c =>
-            {
-                c.Token = TestHelper.MasterToken;
-                c.Address = TestHelper.HttpUri;
-            });
-        }
-
-        public void Dispose()
-        {
-            _client.Dispose();
-        }
-
         [Fact]
         public async Task Catalog_GetDatacenters()
         {
@@ -68,6 +56,42 @@ namespace Consul.Test
 
             Assert.NotEqual((ulong)0, servicesList.LastIndex);
             Assert.NotEmpty(servicesList.Response);
+        }
+
+        [SkippableTheory]
+        [InlineData("dc1", "Football", "192.168.10.10", "Arsenal", "Trophyless", "Near Success Syndrome", 8000)]
+        [InlineData("dc1", "Food", "192.168.10.11", "KFC", "Mid-chow", "Meeeeh", 8000)]
+        public async Task Catalog_ListServices(string dc, string node, string address, string service, string tag1, string tag2, int port)
+        {
+            var cutOffVersion = SemanticVersion.Parse("1.14.0");
+            Skip.If(AgentVersion < cutOffVersion, $"Current version is {AgentVersion}, but `Catalog` is only supported from Consul {cutOffVersion}");
+
+            var id = KVTest.GenerateTestKeyName();
+            var registration = new CatalogRegistration
+            {
+                Datacenter = dc,
+                Node = node,
+                Address = address,
+                Service = new AgentService
+                {
+                    ID = id,
+                    Service = service,
+                    Tags = new[] { tag1, tag2 },
+                    Port = port,
+                }
+            };
+
+            var registerReq = await _client.Catalog.Register(registration);
+            Assert.Equal(HttpStatusCode.OK, registerReq.StatusCode);
+
+            var filter = Selectors.ServiceName == service;
+            var servicesList = await _client.Catalog.Services(dc, filter);
+            Assert.NotEmpty(servicesList.Response);
+
+            var serviceResponse = servicesList.Response.Single();
+            Assert.Equal(service, serviceResponse.Key);
+            Assert.Contains(tag1, serviceResponse.Value);
+            Assert.Contains(tag2, serviceResponse.Value);
         }
 
         [Fact]
@@ -157,6 +181,67 @@ namespace Consul.Test
         }
 
         [Fact]
+        public async Task Catalog_GetTaggedAddressesService()
+        {
+            var svcID1 = KVTest.GenerateTestKeyName();
+            var svcID2 = KVTest.GenerateTestKeyName();
+            var registration = new CatalogRegistration
+            {
+                Datacenter = "dc1",
+                Node = "foobar",
+                Address = "192.168.10.10",
+                Service = new AgentService
+                {
+                    ID = svcID1,
+                    Service = svcID2,
+                    Tags = new[] { "master", "v1" },
+                    Port = 8000,
+                    TaggedAddresses = new Dictionary<string, ServiceTaggedAddress>
+                    {
+                        {"lan", new ServiceTaggedAddress {Address = "127.0.0.1", Port = 80}},
+                        {"wan", new ServiceTaggedAddress {Address = "192.168.10.10", Port = 8000}}
+                    }
+                }
+            };
+
+            await _client.Catalog.Register(registration);
+
+            var services = await _client.Catalog.Service(svcID2);
+
+            Assert.True(services.Response.Length > 0);
+            Assert.True(services.Response[0].ServiceTaggedAddresses.Count > 0);
+            Assert.True(services.Response[0].ServiceTaggedAddresses.ContainsKey("wan"));
+            Assert.True(services.Response[0].ServiceTaggedAddresses.ContainsKey("lan"));
+        }
+
+        [Fact]
+        public async Task Catalog_GetNodesForMeshCapableService()
+        {
+            var svcID = KVTest.GenerateTestKeyName();
+            var registration = new AgentServiceRegistration
+            {
+                Name = svcID,
+                Port = 8000,
+                Connect = new AgentServiceConnect
+                {
+                    SidecarService = new AgentServiceRegistration { Name = "sidecar", Port = 9000, },
+                },
+            };
+
+            await _client.Agent.ServiceRegister(registration);
+            // First request - with no WaitIndex set
+            var services = await _client.Catalog.NodesForMeshCapableService(registration.Name);
+            if (services.Response == null || services.Response.Length == 0)
+            {
+                // Get the index from the first response
+                var options = new QueryOptions() { WaitIndex = services.LastIndex, };
+                services = await _client.Catalog.NodesForMeshCapableService(registration.Name, options);
+            }
+            Assert.NotEmpty(services.Response);
+            Assert.Equal(services.Response[0].ServiceID, registration.Name + "-sidecar-proxy");
+        }
+
+        [Fact]
         public async Task Catalog_EnableTagOverride()
         {
             var svcID = KVTest.GenerateTestKeyName();
@@ -218,6 +303,169 @@ namespace Consul.Test
                 Assert.Equal(svcID, services.Response[0].ServiceName);
 
                 Assert.True(services.Response[0].ServiceEnableTagOverride);
+            }
+        }
+
+        [SkippableFact]
+        public async Task Catalog_ServicesForNodes()
+        {
+            var cutOffVersion = SemanticVersion.Parse("1.7.0");
+            Skip.If(AgentVersion < cutOffVersion, $"Current version is {AgentVersion}, but `ServicesForNodes` is only supported from Consul {cutOffVersion}");
+
+            var svcID = KVTest.GenerateTestKeyName();
+            var svcID2 = KVTest.GenerateTestKeyName();
+            var registration1 = new CatalogRegistration
+            {
+                Datacenter = "dc1",
+                Node = "foobar",
+                Address = "192.168.10.10",
+                Service = new AgentService
+                {
+                    ID = svcID,
+                    Service = "redis",
+                    Tags = new[] { "master", "v1" },
+                    Port = 8000,
+                    TaggedAddresses = new Dictionary<string, ServiceTaggedAddress>
+                    {
+                        {"lan", new ServiceTaggedAddress {Address = "127.0.0.1", Port = 80}},
+                        {"wan", new ServiceTaggedAddress {Address = "192.168.10.10", Port = 8000}}
+                    }
+                }
+            };
+            var registration2 = new CatalogRegistration
+            {
+                Datacenter = "dc1",
+                Node = "foobar2",
+                Address = "192.168.10.11",
+                Service = new AgentService
+                {
+                    ID = svcID2,
+                    Service = "redis",
+                    Tags = new[] { "master", "v2" },
+                    Port = 8000,
+                    TaggedAddresses = new Dictionary<string, ServiceTaggedAddress>
+                    {
+                        { "lan", new ServiceTaggedAddress { Address = "127.0.0.1", Port = 81 } },
+                        { "wan", new ServiceTaggedAddress { Address = "192.168.10.10", Port = 8001 } }
+                    }
+                }
+            };
+
+            await _client.Catalog.Register(registration1);
+            await _client.Catalog.Register(registration2);
+            var services = await _client.Catalog.ServicesForNode(registration1.Node, new QueryOptions { Datacenter = registration1.Datacenter });
+            Assert.Contains(services.Response.Services, n => n.ID == svcID);
+            Assert.DoesNotContain(services.Response.Services, n => n.ID == svcID2);
+        }
+
+        [SkippableFact]
+        public async Task Catalog_GatewayServices()
+        {
+            var cutOffVersion = SemanticVersion.Parse("1.8.0");
+            Skip.If(AgentVersion < cutOffVersion, $"Current version is {AgentVersion}, but Terminating and Ingress GatewayEntrys are different since {cutOffVersion}");
+            using (IConsulClient client = new ConsulClient(c =>
+            {
+                c.Token = TestHelper.MasterToken;
+                c.Address = TestHelper.HttpUri;
+            }))
+            {
+                var terminatingGatewayName = "my-terminating-gateway";
+                var ingressGatewayName = "my-ingress-gateway";
+
+                var terminatingGatewayEntry = new CatalogRegistration
+                {
+                    Datacenter = "dc1",
+                    Node = "bar",
+                    Address = "192.168.10.11",
+                    Service = new AgentService
+                    {
+                        ID = "redis",
+                        Service = "redis",
+                        Port = 6379
+                    }
+                };
+                await client.Catalog.Register(terminatingGatewayEntry);
+
+                var terminatingGatewayConfigEntry = new TerminatingGatewayEntry
+                {
+                    Name = terminatingGatewayName,
+                    Services = new List<LinkedService>
+                    {
+                        new LinkedService
+                        {
+                            Name = "api",
+                            CAFile = "api/ca.crt",
+                            CertFile = "api/client.crt",
+                            KeyFile = "api/client.key",
+                            SNI = "my-domain"
+                        },
+                        new LinkedService
+                        {
+                            Name = "*",
+                            CAFile = "ca.crt",
+                            CertFile = "client.crt",
+                            KeyFile = "client.key",
+                            SNI = "my-alt-domain"
+                        }
+                    }
+                };
+                await client.Configuration.ApplyConfig(terminatingGatewayConfigEntry);
+
+                var ingressGatewayConfigEntry = new IngressGatewayEntry
+                {
+                    Name = ingressGatewayName,
+                    Listeners = new List<GatewayListener>
+                    {
+                        new GatewayListener
+                        {
+                            Port = 8888,
+                            Services = new List<ExternalService>
+                            {
+                                new ExternalService
+                                {
+                                    Name = "api"
+                                }
+                            }
+                        },
+                        new GatewayListener
+                        {
+                            Port = 9999,
+                            Services = new List<ExternalService>
+                            {
+                                new ExternalService
+                                {
+                                    Name = "redis"
+                                }
+                            }
+                        }
+                    }
+                };
+
+                await client.Configuration.ApplyConfig(ingressGatewayConfigEntry);
+
+                var gatewayServices = await client.Catalog.GatewayService(terminatingGatewayName);
+                Assert.NotEmpty(gatewayServices.Response);
+
+                var terminatingService = gatewayServices.Response[0];
+                Assert.NotNull(terminatingService.Gateway);
+                Assert.Equal(terminatingGatewayName, terminatingService.Gateway.Name);
+                Assert.NotNull(terminatingService.Service);
+                Assert.Equal(ServiceKind.TerminatingGateway, terminatingService.GatewayKind);
+                Assert.NotNull(terminatingService.CAFile);
+                Assert.NotNull(terminatingService.CertFile);
+                Assert.NotNull(terminatingService.KeyFile);
+                Assert.NotNull(terminatingService.SNI);
+
+                gatewayServices = await client.Catalog.GatewayService(ingressGatewayName);
+                Assert.NotEmpty(gatewayServices.Response);
+
+                var ingressService = gatewayServices.Response[0];
+                Assert.NotNull(ingressService.Gateway);
+                Assert.Equal(ingressGatewayName, ingressService.Gateway.Name);
+                Assert.NotNull(ingressService.Service);
+                Assert.Equal(ServiceKind.IngressGateway, ingressService.GatewayKind);
+                Assert.Equal(8888, ingressService.Port);
+                Assert.NotNull(ingressService.Protocol);
             }
         }
     }

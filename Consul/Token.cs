@@ -40,43 +40,55 @@ namespace Consul
         public RoleLink[] Roles { get; set; }
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public ServiceIdentity[] ServiceIdentities { get; set; }
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public NodeIdentity[] NodeIdentities { get; set; }
         public bool Local { get; set; }
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public string AuthMethod { get; set; }
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public ExpandedPolicy[] ExpandedPolicies { get; set; }
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public ExpandedRole[] ExpandedRoles { get; set; }
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string AgentACLDefaultPolicy { get; set; }
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string AgentACLDownPolicy { get; set; }
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string ResolvedByAgent { get; set; }
 
 
-        public bool ShouldSerializeCreateIndex()
+        public static bool ShouldSerializeCreateIndex()
         {
             return false;
         }
 
-        public bool ShouldSerializeModifyIndex()
+        public static bool ShouldSerializeModifyIndex()
         {
             return false;
         }
 
         public TokenEntry()
-            : this(string.Empty, string.Empty, new PolicyLink[] { }, new RoleLink[] { }, new ServiceIdentity[] { })
+            : this(string.Empty, string.Empty, Array.Empty<PolicyLink>(), Array.Empty<RoleLink>(), Array.Empty<ServiceIdentity>())
         {
         }
 
         public TokenEntry(string description, PolicyLink[] policies)
-            : this(string.Empty, description, policies, new RoleLink[] { }, new ServiceIdentity[] { })
+            : this(string.Empty, description, policies, Array.Empty<RoleLink>(), Array.Empty<ServiceIdentity>())
         {
         }
 
         public TokenEntry(string description, RoleLink[] roles)
-            : this(string.Empty, description, new PolicyLink[] { }, roles, new ServiceIdentity[] { })
+            : this(string.Empty, description, Array.Empty<PolicyLink>(), roles, Array.Empty<ServiceIdentity>())
         {
         }
 
         public TokenEntry(string description, ServiceIdentity[] serviceIdentities)
-            : this(string.Empty, description, new PolicyLink[] { }, new RoleLink[] { }, serviceIdentities)
+            : this(string.Empty, description, Array.Empty<PolicyLink>(), Array.Empty<RoleLink>(), serviceIdentities)
         {
         }
 
         public TokenEntry(string accessorId, string description)
-            : this(accessorId, description, new PolicyLink[] { }, new RoleLink[] { }, new ServiceIdentity[] { })
+            : this(accessorId, description, Array.Empty<PolicyLink>(), Array.Empty<RoleLink>(), Array.Empty<ServiceIdentity>())
         {
         }
 
@@ -119,9 +131,14 @@ namespace Consul
         /// </summary>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A write result containing the created ACL Token</returns>
-        public Task<WriteResult<TokenEntry>> Bootstrap(CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<TokenEntry>> Bootstrap(CancellationToken ct)
         {
             return Bootstrap(WriteOptions.Default, ct);
+        }
+
+        public Task<WriteResult<TokenEntry>> Bootstrap()
+        {
+            return Bootstrap(WriteOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -130,7 +147,7 @@ namespace Consul
         /// <param name="writeOptions">Customized write options</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A write result containing the created ACL Token</returns>
-        public async Task<WriteResult<TokenEntry>> Bootstrap(WriteOptions writeOptions, CancellationToken ct = default(CancellationToken))
+        public async Task<WriteResult<TokenEntry>> Bootstrap(WriteOptions writeOptions, CancellationToken ct = default)
         {
             var res = await _client.PutReturning<TokenActionResult>("/v1/acl/bootstrap", writeOptions).Execute(ct).ConfigureAwait(false);
             return new WriteResult<TokenEntry>(res, res.Response);
@@ -142,9 +159,14 @@ namespace Consul
         /// <param name="token">The new ACL Token</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A write result containing the created ACL Token</returns>
-        public Task<WriteResult<TokenEntry>> Create(TokenEntry token, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<TokenEntry>> Create(TokenEntry token, CancellationToken ct)
         {
             return Create(token, WriteOptions.Default, ct);
+        }
+
+        public Task<WriteResult<TokenEntry>> Create(TokenEntry token)
+        {
+            return Create(token, WriteOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -154,7 +176,7 @@ namespace Consul
         /// <param name="writeOptions">Customized write options</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A write result containing the created ACL Token</returns>
-        public async Task<WriteResult<TokenEntry>> Create(TokenEntry token, WriteOptions writeOptions, CancellationToken ct = default(CancellationToken))
+        public async Task<WriteResult<TokenEntry>> Create(TokenEntry token, WriteOptions writeOptions, CancellationToken ct = default)
         {
             var res = await _client.Put<TokenEntry, TokenActionResult>("/v1/acl/token", token, writeOptions).Execute(ct).ConfigureAwait(false);
             return new WriteResult<TokenEntry>(res, res.Response);
@@ -166,9 +188,14 @@ namespace Consul
         /// <param name="token">The modified ACL Token</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A write result containing the updated ACL Token</returns>
-        public Task<WriteResult<TokenEntry>> Update(TokenEntry token, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<TokenEntry>> Update(TokenEntry token, CancellationToken ct)
         {
             return Update(token, WriteOptions.Default, ct);
+        }
+
+        public Task<WriteResult<TokenEntry>> Update(TokenEntry token)
+        {
+            return Update(token, WriteOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -178,7 +205,7 @@ namespace Consul
         /// <param name="writeOptions">Customized write options</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A write result containing the updated ACL Token</returns>
-        public async Task<WriteResult<TokenEntry>> Update(TokenEntry token, WriteOptions writeOptions, CancellationToken ct = default(CancellationToken))
+        public async Task<WriteResult<TokenEntry>> Update(TokenEntry token, WriteOptions writeOptions, CancellationToken ct = default)
         {
             var res = await _client.Put<TokenEntry, TokenActionResult>($"/v1/acl/token/{token.AccessorID}", token, writeOptions).Execute(ct).ConfigureAwait(false);
             return new WriteResult<TokenEntry>(res, res.Response);
@@ -190,9 +217,14 @@ namespace Consul
         /// <param name="id">The Accessor ID of the ACL Token to delete</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>Success (true) or failure (false)</returns>
-        public Task<WriteResult<bool>> Delete(string id, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<bool>> Delete(string id, CancellationToken ct)
         {
             return Delete(id, WriteOptions.Default, ct);
+        }
+
+        public Task<WriteResult<bool>> Delete(string id)
+        {
+            return Delete(id, WriteOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -202,7 +234,7 @@ namespace Consul
         /// <param name="writeOptions">Customized write options</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>Success (true) or failure (false)</returns>
-        public Task<WriteResult<bool>> Delete(string id, WriteOptions writeOptions, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<bool>> Delete(string id, WriteOptions writeOptions, CancellationToken ct = default)
         {
             return _client.DeleteReturning<bool>($"/v1/acl/token/{id}", writeOptions).Execute(ct);
         }
@@ -213,9 +245,14 @@ namespace Consul
         /// <param name="id">The Accessor ID of the ACL Token to clone</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A write result containing the created ACL token</returns>
-        public Task<WriteResult<TokenEntry>> Clone(string id, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<TokenEntry>> Clone(string id, CancellationToken ct)
         {
             return Clone(id, WriteOptions.Default, ct);
+        }
+
+        public Task<WriteResult<TokenEntry>> Clone(string id)
+        {
+            return Clone(id, WriteOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -225,9 +262,14 @@ namespace Consul
         /// <param name="writeOptions">Customized write options</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A write result containing the created ACL token</returns>
-        public Task<WriteResult<TokenEntry>> Clone(string id, WriteOptions writeOptions, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<TokenEntry>> Clone(string id, WriteOptions writeOptions, CancellationToken ct)
         {
             return Clone(id, string.Empty, writeOptions, ct);
+        }
+
+        public Task<WriteResult<TokenEntry>> Clone(string id, WriteOptions writeOptions)
+        {
+            return Clone(id, string.Empty, writeOptions, CancellationToken.None);
         }
 
         /// <summary>
@@ -238,12 +280,13 @@ namespace Consul
         /// <param name="writeOptions">Customized write options</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A write result containing the created ACL token</returns>
-        public async Task<WriteResult<TokenEntry>> Clone(string id, string description, WriteOptions writeOptions, CancellationToken ct = default(CancellationToken))
+        public async Task<WriteResult<TokenEntry>> Clone(string id, string description, WriteOptions writeOptions, CancellationToken ct = default)
         {
             var body = new Dictionary<string, string>
-                {
-                    {"Description", description}
-                };
+            {
+                {"Description", description}
+            };
+
             var res = await _client.Put<object, TokenActionResult>($"/v1/acl/token/{id}/clone", body, writeOptions).Execute(ct).ConfigureAwait(false);
             return new WriteResult<TokenEntry>(res, res.Response);
         }
@@ -254,21 +297,42 @@ namespace Consul
         /// <param name="id">The Accessor ID of the ACL Token to get</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A query result containing the requested ACL Token</returns>
-        public Task<QueryResult<TokenEntry>> Read(string id, CancellationToken ct = default(CancellationToken))
+        public Task<QueryResult<TokenEntry>> Read(string id, CancellationToken ct)
         {
-            return Read(id, QueryOptions.Default, ct);
+            return Read(id, false, QueryOptions.Default, ct);
+        }
+
+        public Task<QueryResult<TokenEntry>> Read(string id)
+        {
+            return Read(id, false, QueryOptions.Default, CancellationToken.None);
+        }
+
+        public Task<QueryResult<TokenEntry>> Read(string id, QueryOptions q)
+        {
+            return Read(id, false, q, CancellationToken.None);
+        }
+
+        public Task<QueryResult<TokenEntry>> Read(string id, QueryOptions q, CancellationToken ct)
+        {
+            return Read(id, false, q, ct);
         }
 
         /// <summary>
         /// Gets an existing ACL Token from Consul
         /// </summary>
         /// <param name="id">The Accessor ID of the ACL Token to get</param>
+        /// <param name="expanded">If true, the contents of all policies and roles affecting the token will also be returned</param>
         /// <param name="queryOptions">Customized query options</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A query result containing the requested ACL Token</returns>
-        public async Task<QueryResult<TokenEntry>> Read(string id, QueryOptions queryOptions, CancellationToken ct = default(CancellationToken))
+        public async Task<QueryResult<TokenEntry>> Read(string id, bool expanded, QueryOptions queryOptions, CancellationToken ct = default)
         {
-            var res = await _client.Get<TokenActionResult>($"/v1/acl/token/{id}", queryOptions).Execute(ct).ConfigureAwait(false);
+            var req = _client.Get<TokenActionResult>($"/v1/acl/token/{id}", queryOptions);
+            if (expanded)
+            {
+                req.Params["expanded"] = "true";
+            }
+            var res = await req.Execute(ct).ConfigureAwait(false);
             return new QueryResult<TokenEntry>(res, res.Response);
         }
 
@@ -277,33 +341,97 @@ namespace Consul
         /// </summary>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A query result containing an array of ACL Tokens</returns>
-        public Task<QueryResult<TokenEntry[]>> List(CancellationToken ct = default(CancellationToken))
+        public Task<QueryResult<TokenEntry[]>> List(CancellationToken ct)
         {
-            return List(QueryOptions.Default, ct);
+            return List(null, null, null, null, QueryOptions.Default, ct);
+        }
+
+        public Task<QueryResult<TokenEntry[]>> List()
+        {
+            return List(null, null, null, null, QueryOptions.Default, CancellationToken.None);
+        }
+
+        public Task<QueryResult<TokenEntry[]>> List(QueryOptions q, CancellationToken ct)
+        {
+            return List(null, null, null, null, q, ct);
+        }
+
+        public Task<QueryResult<TokenEntry[]>> List(QueryOptions q)
+        {
+            return List(null, null, null, null, q, CancellationToken.None);
         }
 
         /// <summary>
         /// Lists the existing ACL Tokens in Consul
         /// </summary>
+        /// <param name="policy">Filters the token list to those tokens that are linked with this specific policy ID</param>
+        /// <param name="role">Filters the token list to those tokens that are linked with this specific role ID</param>
+        /// <param name="serviceName">Filters the token list to those tokens that are linked with this specific service name in their service identity</param>
+        /// <param name="authMethod">Filters the token list to those tokens that are linked with this specific named auth method</param>
         /// <param name="queryOptions">Customized query options</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A query result containing an array of ACL Tokens</returns>
-        public Task<QueryResult<TokenEntry[]>> List(QueryOptions queryOptions, CancellationToken ct = default(CancellationToken))
+        public Task<QueryResult<TokenEntry[]>> List(string policy, string role, string serviceName, string authMethod, QueryOptions queryOptions = default, CancellationToken ct = default)
         {
-            return _client.Get<TokenEntry[]>("/v1/acl/tokens", queryOptions).Execute(ct);
+            var req = _client.Get<TokenEntry[]>("/v1/acl/tokens", queryOptions);
+            if (!string.IsNullOrEmpty(policy))
+            {
+                req.Params["policy"] = policy;
+            }
+            if (!string.IsNullOrEmpty(role))
+            {
+                req.Params["role"] = role;
+            }
+            if (!string.IsNullOrEmpty(serviceName))
+            {
+                req.Params["servicename"] = serviceName;
+            }
+            if (!string.IsNullOrEmpty(authMethod))
+            {
+                req.Params["authmethod"] = authMethod;
+            }
+            return req.Execute(ct);
+        }
+
+        /// <summary>
+        /// Gets the ACL token that matches the secret ID specified with the X-Consul-Token header or the token query parameter.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
+        /// <returns>A query result containing the requested ACL Token</returns>
+        public Task<QueryResult<TokenEntry>> ReadSelfToken(string token, CancellationToken ct)
+        {
+            return ReadSelfToken(token, QueryOptions.Default, ct);
+        }
+
+        public Task<QueryResult<TokenEntry>> ReadSelfToken(string token)
+        {
+            return ReadSelfToken(token, QueryOptions.Default, CancellationToken.None);
+        }
+
+        /// <summary>
+        /// Gets the ACL token that matches the secret ID specified with the X-Consul-Token header or the token query parameter.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <param name="queryOptions">Customized query options</param>
+        /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
+        /// <returns>A query result containing the requested ACL Token</returns>
+        public Task<QueryResult<TokenEntry>> ReadSelfToken(string token, QueryOptions queryOptions, CancellationToken ct = default)
+        {
+            var res = _client.Get<TokenEntry>($"/v1/acl/token/self", queryOptions);
+            if (!string.IsNullOrEmpty(token))
+            {
+                res.Params["token"] = token;
+            }
+            return res.Execute(ct);
         }
     }
 
     public partial class ConsulClient : IConsulClient
     {
-        private Lazy<Token> _token;
-
         /// <summary>
         /// Token returns a handle to the ACL Token endpoints
         /// </summary>
-        public ITokenEndpoint Token
-        {
-            get { return _token.Value; }
-        }
+        public ITokenEndpoint Token { get; private set; }
     }
 }

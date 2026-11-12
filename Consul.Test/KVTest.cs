@@ -27,24 +27,8 @@ using Xunit;
 
 namespace Consul.Test
 {
-    public class KVTest : IDisposable
+    public class KVTest : BaseFixture
     {
-        private ConsulClient _client;
-
-        public KVTest()
-        {
-            _client = new ConsulClient(c =>
-            {
-                c.Token = TestHelper.MasterToken;
-                c.Address = TestHelper.HttpUri;
-            });
-        }
-
-        public void Dispose()
-        {
-            _client.Dispose();
-        }
-
         private static readonly Random Random = new Random();
 
         internal static string GenerateTestKeyName()
@@ -53,8 +37,12 @@ namespace Consul.Test
 
             for (var i = 0; i < keyChars.Length; i++)
             {
-                keyChars[i] = Convert.ToChar(Random.Next(65, 91));
+                lock (Random)
+                {
+                    keyChars[i] = Convert.ToChar(Random.Next(65, 91));
+                }
             }
+
             return new string(keyChars);
         }
 
@@ -262,32 +250,23 @@ namespace Consul.Test
             getRequest = await _client.KV.Get(key);
             Assert.Null(getRequest.Response);
         }
+
         [Fact]
         public async Task KV_WatchGet_Cancel()
         {
             var key = GenerateTestKeyName();
-
-            var value = Encoding.UTF8.GetBytes("test");
 
             var getRequest = await _client.KV.Get(key);
             Assert.Null(getRequest.Response);
 
             using (var cts = new CancellationTokenSource())
             {
-                cts.CancelAfter(1000);
+                cts.Cancel();
 
-                try
+                await Assert.ThrowsAsync<TaskCanceledException>(async () => await _client.KV.Get(key, new QueryOptions
                 {
-                    while (!cts.IsCancellationRequested)
-                    {
-                        getRequest = await _client.KV.Get(key, new QueryOptions() { WaitIndex = getRequest.LastIndex }, cts.Token);
-                    }
-                    Assert.True(false, "A cancellation exception was not thrown when one was expected.");
-                }
-                catch (TaskCanceledException ex)
-                {
-                    Assert.IsType<TaskCanceledException>(ex);
-                }
+                    WaitIndex = getRequest.LastIndex
+                }, cts.Token));
             }
         }
 
@@ -333,27 +312,17 @@ namespace Consul.Test
         {
             var prefix = GenerateTestKeyName();
 
-            var value = Encoding.UTF8.GetBytes("test");
-
             var pairs = await _client.KV.List(prefix);
             Assert.Null(pairs.Response);
 
             using (var cts = new CancellationTokenSource())
             {
-                cts.CancelAfter(1000);
+                cts.Cancel();
 
-                try
+                await Assert.ThrowsAsync<TaskCanceledException>(async () => await _client.KV.List(prefix, new QueryOptions
                 {
-                    while (!cts.IsCancellationRequested)
-                    {
-                        pairs = await _client.KV.List(prefix, new QueryOptions() { WaitIndex = pairs.LastIndex }, cts.Token);
-                    }
-                    Assert.True(false, "A cancellation exception was not thrown when one was expected.");
-                }
-                catch (TaskCanceledException ex)
-                {
-                    Assert.IsType<TaskCanceledException>(ex);
-                }
+                    WaitIndex = pairs.LastIndex
+                }, cts.Token));
             }
         }
 
@@ -379,7 +348,7 @@ namespace Consul.Test
             Assert.Equal(pairs.Response.Length, putTasks.Length);
             Assert.False(pairs.LastIndex == 0);
 
-            var deleteTree = await _client.KV.DeleteTree(prefix);
+            await _client.KV.DeleteTree(prefix);
 
             pairs = await _client.KV.Keys(prefix, "");
             Assert.Null(pairs.Response);
@@ -394,12 +363,12 @@ namespace Consul.Test
             Assert.False(string.IsNullOrEmpty(sessionRequest.Response));
 
             var key = GenerateTestKeyName();
-            var value = Encoding.UTF8.GetBytes("test");
+            var value = "test";
 
             var pair = new KVPair(key)
             {
-                Value = value,
-                Session = id
+                Value = Encoding.UTF8.GetBytes(value),
+                Session = id,
             };
 
             var acquireRequest = await _client.KV.Acquire(pair);
@@ -412,12 +381,14 @@ namespace Consul.Test
             Assert.Equal(getRequest.Response.LockIndex, (ulong)1);
             Assert.True(getRequest.LastIndex > 0);
 
-            acquireRequest = await _client.KV.Release(pair);
-            Assert.True(acquireRequest.Response);
+            var newValue = "test2";
+            pair.Value = Encoding.UTF8.GetBytes(newValue);
+            var releaseRequest = await _client.KV.Release(pair);
+            Assert.True(releaseRequest.Response);
 
             getRequest = await _client.KV.Get(key);
-
             Assert.NotNull(getRequest.Response);
+            Assert.Equal(newValue, Encoding.UTF8.GetString(getRequest.Response.Value));
             Assert.Null(getRequest.Response.Session);
             Assert.Equal(getRequest.Response.LockIndex, (ulong)1);
             Assert.True(getRequest.LastIndex > 0);

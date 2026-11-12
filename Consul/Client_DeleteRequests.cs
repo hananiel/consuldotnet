@@ -17,15 +17,12 @@
 // -----------------------------------------------------------------------
 
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-#if !(CORECLR || PORTABLE || PORTABLE40)
-    using System.Security.Permissions;
-    using System.Runtime.Serialization;
-# endif
 
 namespace Consul
 {
@@ -37,14 +34,16 @@ namespace Consul
     {
         public WriteOptions Options { get; set; }
 
+#pragma warning disable RS0022
         public DeleteReturnRequest(ConsulClient client, string url, WriteOptions options = null) : base(client, url, HttpMethod.Delete)
         {
             if (string.IsNullOrEmpty(url))
             {
-                throw new ArgumentException(nameof(url));
+                throw new ArgumentException(null, nameof(url));
             }
             Options = options ?? WriteOptions.Default;
         }
+#pragma warning restore RS0022
 
         /// <summary>
         /// Execute the DELETE request to the API
@@ -54,7 +53,7 @@ namespace Consul
         public async Task<WriteResult<TOut>> Execute(CancellationToken ct)
         {
             Client.CheckDisposed();
-            timer.Start();
+            var timer = Stopwatch.StartNew();
             var result = new WriteResult<TOut>();
 
             var message = new HttpRequestMessage(HttpMethod.Delete, BuildConsulUri(Endpoint, Params));
@@ -85,7 +84,6 @@ namespace Consul
             }
 
             result.RequestTime = timer.Elapsed;
-            timer.Stop();
 
             return result;
         }
@@ -95,6 +93,11 @@ namespace Consul
             if (Options == WriteOptions.Default)
             {
                 return;
+            }
+
+            if (!string.IsNullOrEmpty(Options.Namespace))
+            {
+                Params["ns"] = Options.Namespace;
             }
 
             if (!string.IsNullOrEmpty(Options.Datacenter))
@@ -119,14 +122,16 @@ namespace Consul
     {
         public WriteOptions Options { get; set; }
 
+#pragma warning disable RS0022
         public DeleteRequest(ConsulClient client, string url, WriteOptions options = null) : base(client, url, HttpMethod.Delete)
         {
             if (string.IsNullOrEmpty(url))
             {
-                throw new ArgumentException(nameof(url));
+                throw new ArgumentException(null, nameof(url));
             }
             Options = options ?? WriteOptions.Default;
         }
+#pragma warning restore RS0022
 
         /// <summary>
         /// Execute the DELETE request to the API
@@ -136,7 +141,7 @@ namespace Consul
         public async Task<WriteResult> Execute(CancellationToken ct)
         {
             Client.CheckDisposed();
-            timer.Start();
+            var timer = Stopwatch.StartNew();
             var result = new WriteResult();
 
             var message = new HttpRequestMessage(HttpMethod.Delete, BuildConsulUri(Endpoint, Params));
@@ -162,8 +167,6 @@ namespace Consul
             }
 
             result.RequestTime = timer.Elapsed;
-            timer.Stop();
-
             return result;
         }
 
@@ -172,6 +175,11 @@ namespace Consul
             if (Options == WriteOptions.Default)
             {
                 return;
+            }
+
+            if (!string.IsNullOrEmpty(Options.Namespace))
+            {
+                Params["ns"] = Options.Namespace;
             }
 
             if (!string.IsNullOrEmpty(Options.Datacenter))
@@ -196,17 +204,19 @@ namespace Consul
     public class DeleteAcceptingRequest<TIn> : ConsulRequest
     {
         public WriteOptions Options { get; set; }
-        private TIn _body;
+        private readonly TIn _body;
 
+#pragma warning disable RS0022
         public DeleteAcceptingRequest(ConsulClient client, string url, TIn body, WriteOptions options = null) : base(client, url, HttpMethod.Delete)
         {
             if (string.IsNullOrEmpty(url))
             {
-                throw new ArgumentException(nameof(url));
+                throw new ArgumentException(null, nameof(url));
             }
             _body = body;
             Options = options ?? WriteOptions.Default;
         }
+#pragma warning restore RS0022
 
         /// <summary>
         /// Execute the DELETE request to the API
@@ -217,12 +227,13 @@ namespace Consul
         {
             Client.CheckDisposed();
             var result = new WriteResult();
+            var timer = Stopwatch.StartNew();
 
             HttpContent content;
 
             if (typeof(TIn) == typeof(byte[]))
             {
-                content = new ByteArrayContent((_body as byte[]) ?? new byte[0]);
+                content = new ByteArrayContent((_body as byte[]) ?? Array.Empty<byte>());
             }
             else if (typeof(TIn) == typeof(Stream))
             {
@@ -258,8 +269,6 @@ namespace Consul
             }
 
             result.RequestTime = timer.Elapsed;
-            timer.Stop();
-
             return result;
         }
 
@@ -268,6 +277,11 @@ namespace Consul
             if (Options == WriteOptions.Default)
             {
                 return;
+            }
+
+            if (!string.IsNullOrEmpty(Options.Namespace))
+            {
+                Params["ns"] = Options.Namespace;
             }
 
             if (!string.IsNullOrEmpty(Options.Datacenter))

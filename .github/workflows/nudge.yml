@@ -1,0 +1,20 @@
+name: Nudge
+
+on:
+  workflow_run:
+    workflows: [CI,CodeQL]
+    types: [completed]
+    branches: [master]
+
+# Sends an external webhook only; no GITHUB_TOKEN access required.
+permissions: {}
+
+jobs:
+  nudge:
+    runs-on: ubuntu-latest
+    environment: nudge
+    steps:
+      - name: Send notification
+        uses: pavlovic-ivan/octo-nudge@ff46467a3892a7b98b103508ebbd1e9ba7b364b1
+        with:
+          webhooks: ${{ secrets.NUDGE_WEBHOOKS }}

@@ -17,15 +17,12 @@
 // -----------------------------------------------------------------------
 
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-#if !(CORECLR || PORTABLE || PORTABLE40)
-    using System.Security.Permissions;
-    using System.Runtime.Serialization;
-#endif
 
 namespace Consul
 {
@@ -37,14 +34,16 @@ namespace Consul
     {
         public WriteOptions Options { get; set; }
 
+#pragma warning disable RS0022
         public PutReturningRequest(ConsulClient client, string url, WriteOptions options = null) : base(client, url, HttpMethod.Put)
         {
             if (string.IsNullOrEmpty(url))
             {
-                throw new ArgumentException(nameof(url));
+                throw new ArgumentException(null, nameof(url));
             }
             Options = options ?? WriteOptions.Default;
         }
+#pragma warning restore RS0022
 
         /// <summary>
         /// Execute the PUT request to the API
@@ -54,7 +53,7 @@ namespace Consul
         public async Task<WriteResult<TOut>> Execute(CancellationToken ct)
         {
             Client.CheckDisposed();
-            timer.Start();
+            var timer = Stopwatch.StartNew();
             var result = new WriteResult<TOut>();
 
             var message = new HttpRequestMessage(HttpMethod.Put, BuildConsulUri(Endpoint, Params));
@@ -85,8 +84,6 @@ namespace Consul
             }
 
             result.RequestTime = timer.Elapsed;
-            timer.Stop();
-
             return result;
         }
 
@@ -95,6 +92,11 @@ namespace Consul
             if (Options == WriteOptions.Default)
             {
                 return;
+            }
+
+            if (!string.IsNullOrEmpty(Options.Namespace))
+            {
+                Params["ns"] = Options.Namespace;
             }
 
             if (!string.IsNullOrEmpty(Options.Datacenter))
@@ -119,14 +121,16 @@ namespace Consul
     {
         public WriteOptions Options { get; set; }
 
+#pragma warning disable RS0022
         public PutNothingRequest(ConsulClient client, string url, WriteOptions options = null) : base(client, url, HttpMethod.Put)
         {
             if (string.IsNullOrEmpty(url))
             {
-                throw new ArgumentException(nameof(url));
+                throw new ArgumentException(null, nameof(url));
             }
             Options = options ?? WriteOptions.Default;
         }
+#pragma warning restore RS0022
 
         /// <summary>
         /// Execute the PUT request to the API
@@ -136,7 +140,7 @@ namespace Consul
         public async Task<WriteResult> Execute(CancellationToken ct)
         {
             Client.CheckDisposed();
-            timer.Start();
+            var timer = Stopwatch.StartNew();
             var result = new WriteResult();
 
             var message = new HttpRequestMessage(HttpMethod.Put, BuildConsulUri(Endpoint, Params));
@@ -162,8 +166,6 @@ namespace Consul
             }
 
             result.RequestTime = timer.Elapsed;
-            timer.Stop();
-
             return result;
         }
 
@@ -172,6 +174,11 @@ namespace Consul
             if (Options == WriteOptions.Default)
             {
                 return;
+            }
+
+            if (!string.IsNullOrEmpty(Options.Namespace))
+            {
+                Params["ns"] = Options.Namespace;
             }
 
             if (!string.IsNullOrEmpty(Options.Datacenter))
@@ -196,17 +203,19 @@ namespace Consul
     public class PutRequest<TIn> : ConsulRequest
     {
         public WriteOptions Options { get; set; }
-        private TIn _body;
+        private readonly TIn _body;
 
+#pragma warning disable RS0022
         public PutRequest(ConsulClient client, string url, TIn body, WriteOptions options = null) : base(client, url, HttpMethod.Put)
         {
             if (string.IsNullOrEmpty(url))
             {
-                throw new ArgumentException(nameof(url));
+                throw new ArgumentException(null, nameof(url));
             }
             _body = body;
             Options = options ?? WriteOptions.Default;
         }
+#pragma warning restore RS0022
 
         /// <summary>
         /// Execute the PUT request to the API
@@ -216,14 +225,14 @@ namespace Consul
         public async Task<WriteResult> Execute(CancellationToken ct)
         {
             Client.CheckDisposed();
-            timer.Start();
+            var timer = Stopwatch.StartNew();
             var result = new WriteResult();
 
             HttpContent content;
 
             if (typeof(TIn) == typeof(byte[]))
             {
-                content = new ByteArrayContent((_body as byte[]) ?? new byte[0]);
+                content = new ByteArrayContent((_body as byte[]) ?? Array.Empty<byte>());
             }
             else if (typeof(TIn) == typeof(Stream))
             {
@@ -259,8 +268,6 @@ namespace Consul
             }
 
             result.RequestTime = timer.Elapsed;
-            timer.Stop();
-
             return result;
         }
 
@@ -269,6 +276,11 @@ namespace Consul
             if (Options == WriteOptions.Default)
             {
                 return;
+            }
+
+            if (!string.IsNullOrEmpty(Options.Namespace))
+            {
+                Params["ns"] = Options.Namespace;
             }
 
             if (!string.IsNullOrEmpty(Options.Datacenter))
@@ -294,17 +306,19 @@ namespace Consul
     public class PutRequest<TIn, TOut> : ConsulRequest
     {
         public WriteOptions Options { get; set; }
-        private TIn _body;
+        private readonly TIn _body;
 
+#pragma warning disable RS0022
         public PutRequest(ConsulClient client, string url, TIn body, WriteOptions options = null) : base(client, url, HttpMethod.Put)
         {
             if (string.IsNullOrEmpty(url))
             {
-                throw new ArgumentException(nameof(url));
+                throw new ArgumentException(null, nameof(url));
             }
             _body = body;
             Options = options ?? WriteOptions.Default;
         }
+#pragma warning restore RS0022
 
         /// <summary>
         /// Execute the PUT request to the API
@@ -314,14 +328,14 @@ namespace Consul
         public async Task<WriteResult<TOut>> Execute(CancellationToken ct)
         {
             Client.CheckDisposed();
-            timer.Start();
+            var timer = Stopwatch.StartNew();
             var result = new WriteResult<TOut>();
 
             HttpContent content = null;
 
             if (typeof(TIn) == typeof(byte[]))
             {
-                var bodyBytes = (_body as byte[]);
+                var bodyBytes = _body as byte[];
                 if (bodyBytes != null)
                 {
                     content = new ByteArrayContent(bodyBytes);
@@ -366,8 +380,6 @@ namespace Consul
             }
 
             result.RequestTime = timer.Elapsed;
-            timer.Stop();
-
             return result;
         }
 
@@ -376,6 +388,11 @@ namespace Consul
             if (Options == WriteOptions.Default)
             {
                 return;
+            }
+
+            if (!string.IsNullOrEmpty(Options.Namespace))
+            {
+                Params["ns"] = Options.Namespace;
             }
 
             if (!string.IsNullOrEmpty(Options.Datacenter))

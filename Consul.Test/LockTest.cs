@@ -29,24 +29,8 @@ namespace Consul.Test
     // These tests are slow, so we put them into separate collection so they can run in parallel to other tests.
     [Trait("speed", "slow")]
     [Collection("LockTest")]
-    public class LockTest : IDisposable
+    public class LockTest : BaseFixture
     {
-        private ConsulClient _client;
-
-        public LockTest()
-        {
-            _client = new ConsulClient(c =>
-            {
-                c.Token = TestHelper.MasterToken;
-                c.Address = TestHelper.HttpUri;
-            });
-        }
-
-        public void Dispose()
-        {
-            _client.Dispose();
-        }
-
         [Fact]
         public async Task Lock_AcquireRelease()
         {
@@ -566,6 +550,62 @@ namespace Consul.Test
                     // Exception expected if above checks all pass
                 }
             }
+        }
+
+        [Fact]
+        public async Task Lock_TryAcquireOnceWithLockDelayZeroWaitTime_NoRetryWait()
+        {
+            const string keyName = "test/lock/acquireoncewithlockdelay_noretrywait";
+
+            var lockKey = (Lock)_client.CreateLock(keyName);
+            await lockKey.Acquire(CancellationToken.None);
+            Assert.True(lockKey.IsHeld);
+            await _client.Session.Destroy(lockKey.LockSession);
+
+            var oneShotLockOptions = new LockOptions(keyName)
+            {
+                LockTryOnce = true,
+                LockWaitTime = TimeSpan.Zero,
+                LockRetryTime = TimeSpan.FromSeconds(15)
+            };
+
+            var oneShotLock = (Lock)_client.CreateLock(oneShotLockOptions);
+
+            var stopwatch = Stopwatch.StartNew();
+            await Assert.ThrowsAsync<LockMaxAttemptsReachedException>(
+                async () => await oneShotLock.Acquire(CancellationToken.None));
+            var elapsedMilliseconds = stopwatch.ElapsedMilliseconds;
+            Assert.False(oneShotLock.IsHeld);
+            // https://github.com/dotnet/runtime/issues/45585
+            Assert.True(elapsedMilliseconds < oneShotLockOptions.LockRetryTime.TotalMilliseconds * 0.9);
+        }
+
+        [Fact]
+        public async Task Lock_TryAcquireOnceWithLockDelayNonZeroWaitTime_EnsureRetryWait()
+        {
+            const string keyName = "test/lock/acquireoncewithlockdelay_ensureretrywait";
+
+            var lockKey = (Lock)_client.CreateLock(keyName);
+            await lockKey.Acquire(CancellationToken.None);
+            Assert.True(lockKey.IsHeld);
+            await _client.Session.Destroy(lockKey.LockSession);
+
+            var oneShotLockOptions = new LockOptions(keyName)
+            {
+                LockTryOnce = true,
+                LockWaitTime = TimeSpan.FromSeconds(1),
+                LockRetryTime = TimeSpan.FromSeconds(5)
+            };
+
+            var oneShotLock = (Lock)_client.CreateLock(oneShotLockOptions);
+
+            var stopwatch = Stopwatch.StartNew();
+            await Assert.ThrowsAsync<LockMaxAttemptsReachedException>(
+                async () => await oneShotLock.Acquire(CancellationToken.None));
+            var elapsedMilliseconds = stopwatch.ElapsedMilliseconds;
+            Assert.False(oneShotLock.IsHeld);
+            // https://github.com/dotnet/runtime/issues/45585
+            Assert.True(elapsedMilliseconds > oneShotLockOptions.LockRetryTime.TotalMilliseconds * 0.9);
         }
     }
 }

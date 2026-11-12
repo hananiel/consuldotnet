@@ -57,44 +57,47 @@ namespace Consul
         public PolicyLink[] Policies { get; set; }
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public ServiceIdentity[] ServiceIdentities { get; set; }
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public NodeIdentity[] NodeIdentities { get; set; }
 
-        public bool ShouldSerializeCreateIndex()
+
+        public static bool ShouldSerializeCreateIndex()
         {
             return false;
         }
 
-        public bool ShouldSerializeModifyIndex()
+        public static bool ShouldSerializeModifyIndex()
         {
             return false;
         }
 
         public RoleEntry()
-            : this(string.Empty, string.Empty, string.Empty, new PolicyLink[] { }, new ServiceIdentity[] { })
+            : this(string.Empty, string.Empty, string.Empty, Array.Empty<PolicyLink>(), Array.Empty<ServiceIdentity>())
         {
         }
 
         public RoleEntry(string name)
-            : this(string.Empty, name, string.Empty, new PolicyLink[] { }, new ServiceIdentity[] { })
+            : this(string.Empty, name, string.Empty, Array.Empty<PolicyLink>(), Array.Empty<ServiceIdentity>())
         {
         }
 
         public RoleEntry(string name, string description)
-            : this(string.Empty, name, description, new PolicyLink[] { }, new ServiceIdentity[] { })
+            : this(string.Empty, name, description, Array.Empty<PolicyLink>(), Array.Empty<ServiceIdentity>())
         {
         }
 
         public RoleEntry(string id, string name, string description)
-            : this(id, name, description, new PolicyLink[] { }, new ServiceIdentity[] { })
+            : this(id, name, description, Array.Empty<PolicyLink>(), Array.Empty<ServiceIdentity>())
         {
         }
 
         public RoleEntry(string id, string name, string description, PolicyLink[] policies)
-            : this(id, name, description, policies, new ServiceIdentity[] { })
+            : this(id, name, description, policies, Array.Empty<ServiceIdentity>())
         {
         }
 
         public RoleEntry(string id, string name, string description, ServiceIdentity[] serviceIdentities)
-            : this(id, name, description, new PolicyLink[] { }, serviceIdentities)
+            : this(id, name, description, Array.Empty<PolicyLink>(), serviceIdentities)
         {
         }
 
@@ -134,9 +137,14 @@ namespace Consul
         /// <param name="policy">The new ACL Role</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A write result containing the created ACL Role</returns>
-        public Task<WriteResult<RoleEntry>> Create(RoleEntry policy, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<RoleEntry>> Create(RoleEntry policy, CancellationToken ct)
         {
             return Create(policy, WriteOptions.Default, ct);
+        }
+
+        public Task<WriteResult<RoleEntry>> Create(RoleEntry policy)
+        {
+            return Create(policy, WriteOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -146,7 +154,7 @@ namespace Consul
         /// <param name="writeOptions">Customised write options</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A write result containing the created ACL Role</returns>
-        public async Task<WriteResult<RoleEntry>> Create(RoleEntry policy, WriteOptions writeOptions, CancellationToken ct = default(CancellationToken))
+        public async Task<WriteResult<RoleEntry>> Create(RoleEntry policy, WriteOptions writeOptions, CancellationToken ct = default)
         {
             var res = await _client.Put<RoleEntry, RoleActionResult>("/v1/acl/role", policy, writeOptions).Execute(ct).ConfigureAwait(false);
             return new WriteResult<RoleEntry>(res, res.Response);
@@ -158,9 +166,14 @@ namespace Consul
         /// <param name="id">The ID of the ACL Role to delete</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>Success (true) or failure (false)</returns>
-        public Task<WriteResult<bool>> Delete(string id, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<bool>> Delete(string id, CancellationToken ct)
         {
             return Delete(id, WriteOptions.Default, ct);
+        }
+
+        public Task<WriteResult<bool>> Delete(string id)
+        {
+            return Delete(id, WriteOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -170,7 +183,7 @@ namespace Consul
         /// <param name="writeOptions">Customised write options</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>Success (true) or failure (false)</returns>
-        public async Task<WriteResult<bool>> Delete(string id, WriteOptions writeOptions, CancellationToken ct = default(CancellationToken))
+        public async Task<WriteResult<bool>> Delete(string id, WriteOptions writeOptions, CancellationToken ct = default)
         {
             var res = await _client.DeleteReturning<bool>($"/v1/acl/role/{id}", writeOptions).Execute(ct).ConfigureAwait(false);
             return new WriteResult<bool>(res, res.Response);
@@ -181,9 +194,14 @@ namespace Consul
         /// </summary>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A query result containing an array of ACL Roles</returns>
-        public Task<QueryResult<RoleEntry[]>> List(CancellationToken ct = default(CancellationToken))
+        public Task<QueryResult<RoleEntry[]>> List(CancellationToken ct)
         {
             return List(QueryOptions.Default, ct);
+        }
+
+        public Task<QueryResult<RoleEntry[]>> List()
+        {
+            return List(QueryOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -192,7 +210,7 @@ namespace Consul
         /// <param name="queryOptions">Customised query options</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A query result containing an array of ACL Roles</returns>
-        public async Task<QueryResult<RoleEntry[]>> List(QueryOptions queryOptions, CancellationToken ct = default(CancellationToken))
+        public async Task<QueryResult<RoleEntry[]>> List(QueryOptions queryOptions, CancellationToken ct = default)
         {
             var res = await _client.Get<RoleEntry[]>("/v1/acl/roles", queryOptions).Execute(ct).ConfigureAwait(false);
             return new QueryResult<RoleEntry[]>(res, res.Response);
@@ -204,9 +222,14 @@ namespace Consul
         /// <param name="id">The ID of the ACL Role to get</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A query result containing the requested ACL Role</returns>
-        public Task<QueryResult<RoleEntry>> Read(string id, CancellationToken ct = default(CancellationToken))
+        public Task<QueryResult<RoleEntry>> Read(string id, CancellationToken ct)
         {
             return Read(id, QueryOptions.Default, ct);
+        }
+
+        public Task<QueryResult<RoleEntry>> Read(string id)
+        {
+            return Read(id, QueryOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -216,7 +239,7 @@ namespace Consul
         /// <param name="queryOptions">Customised query options</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A query result containing the requested ACL Role</returns>
-        public async Task<QueryResult<RoleEntry>> Read(string id, QueryOptions queryOptions, CancellationToken ct = default(CancellationToken))
+        public async Task<QueryResult<RoleEntry>> Read(string id, QueryOptions queryOptions, CancellationToken ct = default)
         {
             var res = await _client.Get<RoleEntry>($"/v1/acl/role/{id}", queryOptions).Execute(ct).ConfigureAwait(false);
             return new QueryResult<RoleEntry>(res, res.Response);
@@ -228,9 +251,14 @@ namespace Consul
         /// <param name="name">The Name of the ACL Role to get</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A query result containing the requested ACL Role</returns>
-        public Task<QueryResult<RoleEntry>> ReadByName(string name, CancellationToken ct = default(CancellationToken))
+        public Task<QueryResult<RoleEntry>> ReadByName(string name, CancellationToken ct)
         {
             return ReadByName(name, QueryOptions.Default, ct);
+        }
+
+        public Task<QueryResult<RoleEntry>> ReadByName(string name)
+        {
+            return ReadByName(name, QueryOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -240,7 +268,7 @@ namespace Consul
         /// <param name="queryOptions">Customised query options</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A query result containing the requested ACL Role</returns>
-        public async Task<QueryResult<RoleEntry>> ReadByName(string name, QueryOptions queryOptions, CancellationToken ct = default(CancellationToken))
+        public async Task<QueryResult<RoleEntry>> ReadByName(string name, QueryOptions queryOptions, CancellationToken ct = default)
         {
             var res = await _client.Get<RoleEntry>($"/v1/acl/role/name/{name}", queryOptions).Execute(ct).ConfigureAwait(false);
             return new QueryResult<RoleEntry>(res, res.Response);
@@ -252,9 +280,14 @@ namespace Consul
         /// <param name="role">The modified ACL Role</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A write result containing the updated ACL Role</returns>
-        public Task<WriteResult<RoleEntry>> Update(RoleEntry role, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<RoleEntry>> Update(RoleEntry role, CancellationToken ct)
         {
             return Update(role, WriteOptions.Default, ct);
+        }
+
+        public Task<WriteResult<RoleEntry>> Update(RoleEntry role)
+        {
+            return Update(role, WriteOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -264,7 +297,7 @@ namespace Consul
         /// <param name="writeOptions">Customised write options</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A write result containing the updated ACL Role</returns>
-        public async Task<WriteResult<RoleEntry>> Update(RoleEntry role, WriteOptions writeOptions, CancellationToken ct = default(CancellationToken))
+        public async Task<WriteResult<RoleEntry>> Update(RoleEntry role, WriteOptions writeOptions, CancellationToken ct = default)
         {
             var res = await _client.Put<RoleEntry, RoleActionResult>($"/v1/acl/role/{role.ID}", role, writeOptions).Execute(ct).ConfigureAwait(false);
             return new WriteResult<RoleEntry>(res, res.Response);
@@ -273,14 +306,9 @@ namespace Consul
 
     public partial class ConsulClient : IConsulClient
     {
-        private Lazy<Role> _role;
-
         /// <summary>
         /// Role returns a handle to the ACL Role endpoints
         /// </summary>
-        public IRoleEndpoint Role
-        {
-            get { return _role.Value; }
-        }
+        public IRoleEndpoint Role { get; private set; }
     }
 }

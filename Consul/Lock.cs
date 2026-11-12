@@ -24,7 +24,7 @@ using System.Threading.Tasks;
 
 namespace Consul
 {
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
     [Serializable]
 #endif
     public class LockHeldException : Exception
@@ -42,13 +42,13 @@ namespace Consul
             : base(message, inner)
         {
         }
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
         protected LockHeldException(
           SerializationInfo info,
           StreamingContext context) : base(info, context) { }
 #endif
     }
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
     [Serializable]
 #endif
     public class LockNotHeldException : Exception
@@ -66,13 +66,13 @@ namespace Consul
             : base(message, inner)
         {
         }
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
         protected LockNotHeldException(
           SerializationInfo info,
           StreamingContext context) : base(info, context) { }
 #endif
     }
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
     [Serializable]
 #endif
     public class LockInUseException : Exception
@@ -90,13 +90,13 @@ namespace Consul
             : base(message, inner)
         {
         }
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
         protected LockInUseException(
           SerializationInfo info,
           StreamingContext context) : base(info, context) { }
 #endif
     }
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
     [Serializable]
 #endif
     public class LockConflictException : Exception
@@ -114,13 +114,13 @@ namespace Consul
             : base(message, inner)
         {
         }
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
         protected LockConflictException(
           SerializationInfo info,
           StreamingContext context) : base(info, context) { }
 #endif
     }
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
     [Serializable]
 #endif
     public class LockMaxAttemptsReachedException : Exception
@@ -128,7 +128,7 @@ namespace Consul
         public LockMaxAttemptsReachedException() { }
         public LockMaxAttemptsReachedException(string message) : base(message) { }
         public LockMaxAttemptsReachedException(string message, Exception inner) : base(message, inner) { }
-#if !(CORECLR || PORTABLE || PORTABLE40)
+#if !(NETSTANDARD || NETCOREAPP)
         protected LockMaxAttemptsReachedException(
           SerializationInfo info,
           StreamingContext context) : base(info, context) { }
@@ -308,7 +308,7 @@ namespace Consul
 
                         // If the code executes this far, no other session has the lock, so try to lock it
                         var kvPair = LockEntry(LockSession);
-                        var locked = (await _client.KV.Acquire(kvPair).ConfigureAwait(false)).Response;
+                        var locked = (await _client.KV.Acquire(kvPair, ct).ConfigureAwait(false)).Response;
 
                         // KV acquisition succeeded, so the session now holds the lock
                         if (locked)
@@ -336,10 +336,13 @@ namespace Consul
                             continue;
                         }
 
-                        // If the session is null and the lock failed to acquire, then it means
-                        // a lock-delay is in effect and a timed wait must be used to avoid a hot loop.
-                        try { await Task.Delay(Opts.LockRetryTime, ct).ConfigureAwait(false); }
-                        catch (TaskCanceledException) { /* Ignore TaskTaskCanceledException */}
+                        if (!(Opts.LockTryOnce && Opts.LockWaitTime == TimeSpan.Zero))
+                        {
+                            // If the session is null and the lock failed to acquire, then it means
+                            // a lock-delay is in effect and a timed wait must be used to avoid a hot loop.
+                            try { await Task.Delay(Opts.LockRetryTime, ct).ConfigureAwait(false); }
+                            catch (TaskCanceledException) { /* Ignore TaskTaskCanceledException */}
+                        }
                     }
                     DisposeCancellationTokenSource();
                     throw new LockNotHeldException("Unable to acquire the lock with Consul");
@@ -379,7 +382,7 @@ namespace Consul
         /// <summary>
         /// Unlock released the lock. It is an error to call this if the lock is not currently held.
         /// </summary>
-        public async Task Release(CancellationToken ct = default(CancellationToken))
+        public async Task Release(CancellationToken ct = default)
         {
             try
             {
@@ -417,7 +420,7 @@ namespace Consul
         /// <summary>
         /// Destroy is used to cleanup the lock entry. It is not necessary to invoke. It will fail if the lock is in use.
         /// </summary>
-        public async Task Destroy(CancellationToken ct = default(CancellationToken))
+        public async Task Destroy(CancellationToken ct = default)
         {
             using (await _mutex.LockAsync().ConfigureAwait(false))
             {
@@ -607,6 +610,15 @@ namespace Consul
         }
         public TimeSpan LockWaitTime { get; set; }
         public TimeSpan MonitorRetryTime { get; set; }
+
+        /// <summary>
+        /// When set to false, <see cref="Lock.Acquire()"/> will block forever until the lock is acquired. LockWaitTime is ignored in this case.
+        /// <br/>
+        /// When set to true, <see cref="Lock.Acquire()"/> the lock within a timestamp (It is analogous to <c>SemaphoreSlim.Wait(Timespan timeout)</c>.
+        /// Under the hood, it attempts to acquire the lock multiple times if needed (due to the HTTP Long Poll returning early),
+        /// and will do so as many times as it can within the bounds set by LockWaitTime.
+        /// If LockWaitTime is set to 0, there will be only single attempt to acquire the lock.
+        /// </summary>
         public bool LockTryOnce { get; set; }
 
         public LockOptions(string key)
@@ -654,9 +666,9 @@ namespace Consul
         /// AcquireLock creates a lock that is already acquired when this call returns.
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="ct"></param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns></returns>
-        public Task<IDistributedLock> AcquireLock(string key, CancellationToken ct = default(CancellationToken))
+        public Task<IDistributedLock> AcquireLock(string key, CancellationToken ct)
         {
             if (string.IsNullOrEmpty(key))
             {
@@ -665,13 +677,18 @@ namespace Consul
             return AcquireLock(new LockOptions(key), ct);
         }
 
+        public Task<IDistributedLock> AcquireLock(string key)
+        {
+            return AcquireLock(key, CancellationToken.None);
+        }
+
         /// <summary>
         /// AcquireLock creates a lock that is already acquired when this call returns.
         /// </summary>
         /// <param name="opts"></param>
-        /// <param name="ct"></param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns></returns>
-        public async Task<IDistributedLock> AcquireLock(LockOptions opts, CancellationToken ct = default(CancellationToken))
+        public async Task<IDistributedLock> AcquireLock(LockOptions opts, CancellationToken ct)
         {
             if (opts == null)
             {
@@ -683,13 +700,19 @@ namespace Consul
             return l;
         }
 
+        public async Task<IDistributedLock> AcquireLock(LockOptions opts)
+        {
+            return await AcquireLock(opts, CancellationToken.None).ConfigureAwait(false);
+        }
+
         /// <summary>
         /// ExecuteLock accepts a delegate to execute in the context of a lock, releasing the lock when completed.
         /// </summary>
         /// <param name="key"></param>
         /// <param name="action"></param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns></returns>
-        public Task ExecuteLocked(string key, Action action, CancellationToken ct = default(CancellationToken))
+        public Task ExecuteLocked(string key, Action action, CancellationToken ct)
         {
             if (string.IsNullOrEmpty(key))
             {
@@ -698,13 +721,19 @@ namespace Consul
             return ExecuteLocked(new LockOptions(key), action, ct);
         }
 
+        public Task ExecuteLocked(string key, Action action)
+        {
+            return ExecuteLocked(key, action, CancellationToken.None);
+        }
+
         /// <summary>
         /// ExecuteLock accepts a delegate to execute in the context of a lock, releasing the lock when completed.
         /// </summary>
         /// <param name="opts"></param>
         /// <param name="action"></param>
+        /// <param name="ct">The cancellation token</param>
         /// <returns></returns>
-        public async Task ExecuteLocked(LockOptions opts, Action action, CancellationToken ct = default(CancellationToken))
+        public async Task ExecuteLocked(LockOptions opts, Action action, CancellationToken ct)
         {
             if (opts == null)
             {
@@ -727,15 +756,21 @@ namespace Consul
             }
             finally
             {
-                await l.Release().ConfigureAwait(false);
+                await l.Release(ct).ConfigureAwait(false);
             }
 
         }
+
+        public async Task ExecuteLocked(LockOptions opts, Action action)
+        {
+            await ExecuteLocked(opts, action, CancellationToken.None).ConfigureAwait(false);
+        }
+
         /// <summary>
         /// ExecuteLock accepts a delegate to execute in the context of a lock, releasing the lock when completed.
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="ct"></param>
+        /// <param name="ct">The cancellation token</param>
         /// <param name="action"></param>
         /// <returns></returns>
         [Obsolete("This method will be removed in a future release. Replace calls with the method signature ExecuteLocked(string, Action, CancellationToken)")]
@@ -756,7 +791,7 @@ namespace Consul
         /// ExecuteLock accepts a delegate to execute in the context of a lock, releasing the lock when completed.
         /// </summary>
         /// <param name="opts"></param>
-        /// <param name="ct"></param>
+        /// <param name="ct">The cancellation token</param>
         /// <param name="action"></param>
         /// <returns></returns>
         [Obsolete("This method will be removed in a future release. Replace calls with the method signature ExecuteLocked(LockOptions, Action, CancellationToken)")]

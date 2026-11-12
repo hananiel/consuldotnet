@@ -17,6 +17,8 @@
 // -----------------------------------------------------------------------
 
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -24,10 +26,6 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Consul.Filtering;
-#if !(CORECLR || PORTABLE || PORTABLE40)
-    using System.Security.Permissions;
-    using System.Runtime.Serialization;
-#endif
 
 namespace Consul
 {
@@ -37,19 +35,32 @@ namespace Consul
     /// <typeparam name="TOut">A generic type to be deserialised and returned</typeparam>
     public class GetRequest<TOut> : ConsulRequest
     {
+        // TODO(marcink): Remove the setter in the next major release to make the class immutable
         public QueryOptions Options { get; set; }
 
-        public IEncodable Filter { get; set; }
+        public IEncodable Filter { get; }
 
-        public GetRequest(ConsulClient client, string url, QueryOptions options = null, IEncodable filter = null) : base(client, url, HttpMethod.Get)
+#pragma warning disable RS0022
+        public GetRequest(ConsulClient client, string url) :
+            this(client, url, null, null)
+        {
+        }
+
+        public GetRequest(ConsulClient client, string url, QueryOptions options) :
+            this(client, url, options, null)
+        {
+        }
+
+        public GetRequest(ConsulClient client, string url, QueryOptions options, IEncodable filter) : base(client, url, HttpMethod.Get)
         {
             if (string.IsNullOrEmpty(url))
             {
-                throw new ArgumentException(nameof(url));
+                throw new ArgumentException(null, nameof(url));
             }
             Options = options ?? QueryOptions.Default;
             Filter = filter;
         }
+#pragma warning restore RS0022
 
         /// <summary>
         /// Execute the GET request to the API
@@ -59,7 +70,7 @@ namespace Consul
         public async Task<QueryResult<TOut>> Execute(CancellationToken ct)
         {
             Client.CheckDisposed();
-            timer.Start();
+            var timer = Stopwatch.StartNew();
             var result = new QueryResult<TOut>();
 
             var message = new HttpRequestMessage(HttpMethod.Get, BuildConsulUri(Endpoint, Params));
@@ -70,7 +81,19 @@ namespace Consul
             result.StatusCode = response.StatusCode;
             ResponseStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 
-            if (response.StatusCode != HttpStatusCode.NotFound && !response.IsSuccessStatusCode)
+
+            Func<bool> isSpecialStatusCode = () =>
+            {
+                var isAgentServiceName = Endpoint.StartsWith("v1/agent/health/service/name/", StringComparison.OrdinalIgnoreCase);
+                var isAgentServiceId = Endpoint.StartsWith("v1/agent/health/service/id/", StringComparison.OrdinalIgnoreCase);
+
+                return ((int)response.StatusCode == 503 && isAgentServiceName) ||
+                       ((int)response.StatusCode == 429 && isAgentServiceName) ||
+                       ((int)response.StatusCode == 503 && isAgentServiceId) ||
+                       ((int)response.StatusCode == 429 && isAgentServiceId);
+            };
+
+            if (response.StatusCode != HttpStatusCode.NotFound && !response.IsSuccessStatusCode && !isSpecialStatusCode())
             {
                 if (ResponseStream == null)
                 {
@@ -84,14 +107,12 @@ namespace Consul
                 }
             }
 
-            if (response.IsSuccessStatusCode)
+            if (response.IsSuccessStatusCode || isSpecialStatusCode())
             {
                 result.Response = Deserialize<TOut>(ResponseStream);
             }
 
             result.RequestTime = timer.Elapsed;
-            timer.Stop();
-
             return result;
         }
 
@@ -103,14 +124,14 @@ namespace Consul
         public async Task<QueryResult<Stream>> ExecuteStreaming(CancellationToken ct)
         {
             Client.CheckDisposed();
-            timer.Start();
+            var timer = Stopwatch.StartNew();
             var result = new QueryResult<Stream>();
 
             var message = new HttpRequestMessage(HttpMethod.Get, BuildConsulUri(Endpoint, Params));
             ApplyHeaders(message, Client.Config);
             var response = await Client.HttpClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
 
-            ParseQueryHeaders(response, (result as QueryResult<TOut>));
+            ParseQueryHeaders(response, result as QueryResult<TOut>);
             result.StatusCode = response.StatusCode;
             ResponseStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 
@@ -118,13 +139,10 @@ namespace Consul
 
             if (response.StatusCode != HttpStatusCode.NotFound && !response.IsSuccessStatusCode)
             {
-                throw new ConsulRequestException(string.Format("Unexpected response, status code {0}",
-                    response.StatusCode), response.StatusCode);
+                throw new ConsulRequestException($"Unexpected response, status code {response.StatusCode}", response.StatusCode);
             }
 
             result.RequestTime = timer.Elapsed;
-            timer.Stop();
-
             return result;
         }
 
@@ -138,6 +156,11 @@ namespace Consul
             if (Options == QueryOptions.Default)
             {
                 return;
+            }
+
+            if (!string.IsNullOrEmpty(Options.Namespace))
+            {
+                Params["ns"] = Options.Namespace;
             }
 
             if (!string.IsNullOrEmpty(Options.Datacenter))
@@ -166,6 +189,27 @@ namespace Consul
             if (!string.IsNullOrEmpty(Options.Near))
             {
                 Params["near"] = Options.Near;
+            }
+
+            if (Options.UseCache)
+            {
+                Params["cached"] = string.Empty;
+                var cacheControl = new List<string>();
+
+                if (Options.MaxAge.HasValue)
+                {
+                    cacheControl.Add($"max-age={Convert.ToUInt64(Options.MaxAge.Value.TotalSeconds)}");
+                }
+
+                if (Options.StaleIfError.HasValue)
+                {
+                    cacheControl.Add($"stale-if-error={Convert.ToUInt64(Options.StaleIfError.Value.TotalSeconds)}");
+                }
+
+                if (cacheControl.Count > 0)
+                {
+                    Params["Cache-Control"] = string.Join(",", cacheControl);
+                }
             }
         }
 
@@ -220,6 +264,31 @@ namespace Consul
                     throw new ConsulRequestException("Failed to parse X-Consul-Translate-Addresses", res.StatusCode, ex);
                 }
             }
+
+            if (headers.Contains("X-Cache"))
+            {
+                try
+                {
+
+                    meta.XCache = headers.GetValues("X-Cache").Single() == "HIT" ? QueryResult.CacheResult.Hit : QueryResult.CacheResult.Miss;
+                }
+                catch (Exception ex)
+                {
+                    throw new ConsulRequestException("Failed to parse X-Cache", res.StatusCode, ex);
+                }
+            }
+
+            if (headers.Contains("Age"))
+            {
+                try
+                {
+                    meta.Age = TimeSpan.FromSeconds(double.Parse(headers.GetValues("Age").Single()));
+                }
+                catch (Exception ex)
+                {
+                    throw new ConsulRequestException("Failed to parse Age", res.StatusCode, ex);
+                }
+            }
         }
 
         protected override void ApplyHeaders(HttpRequestMessage message, ConsulClientConfiguration clientConfig)
@@ -238,14 +307,16 @@ namespace Consul
     {
         public QueryOptions Options { get; set; }
 
+#pragma warning disable RS0022
         public GetRequest(ConsulClient client, string url, QueryOptions options = null) : base(client, url, HttpMethod.Get)
         {
             if (string.IsNullOrEmpty(url))
             {
-                throw new ArgumentException(nameof(url));
+                throw new ArgumentException(null, nameof(url));
             }
             Options = options ?? QueryOptions.Default;
         }
+#pragma warning restore RS0022
 
         /// <summary>
         /// Execute the GET request to the API
@@ -255,7 +326,7 @@ namespace Consul
         public async Task<QueryResult<string>> Execute(CancellationToken ct)
         {
             Client.CheckDisposed();
-            timer.Start();
+            var timer = Stopwatch.StartNew();
             var result = new QueryResult<string>();
 
             var message = new HttpRequestMessage(HttpMethod.Get, BuildConsulUri(Endpoint, Params));
@@ -265,7 +336,18 @@ namespace Consul
             result.StatusCode = response.StatusCode;
             ResponseStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 
-            if (response.StatusCode != HttpStatusCode.NotFound && !response.IsSuccessStatusCode)
+            Func<bool> isSpecialStatusCode = () =>
+            {
+                var isAgentServiceName = Endpoint.StartsWith("v1/agent/health/service/name/", StringComparison.OrdinalIgnoreCase);
+                var isAgentServiceId = Endpoint.StartsWith("v1/agent/health/service/id/", StringComparison.OrdinalIgnoreCase);
+
+                return ((int)response.StatusCode == 503 && isAgentServiceName) ||
+                       ((int)response.StatusCode == 429 && isAgentServiceName) ||
+                       ((int)response.StatusCode == 503 && isAgentServiceId) ||
+                       ((int)response.StatusCode == 429 && isAgentServiceId);
+            };
+
+            if (response.StatusCode != HttpStatusCode.NotFound && !response.IsSuccessStatusCode && !isSpecialStatusCode())
             {
                 if (ResponseStream == null)
                 {
@@ -279,7 +361,7 @@ namespace Consul
                 }
             }
 
-            if (response.IsSuccessStatusCode)
+            if (response.IsSuccessStatusCode || isSpecialStatusCode())
             {
                 using (var reader = new StreamReader(ResponseStream))
                 {
@@ -287,9 +369,7 @@ namespace Consul
                 }
             }
 
-            timer.Stop();
             result.RequestTime = timer.Elapsed;
-
             return result;
         }
 
@@ -300,9 +380,35 @@ namespace Consul
                 return;
             }
 
+            if (!string.IsNullOrEmpty(Options.Namespace))
+            {
+                Params["ns"] = Options.Namespace;
+            }
+
             if (!string.IsNullOrEmpty(Options.Datacenter))
             {
                 Params["dc"] = Options.Datacenter;
+            }
+
+            if (Options.UseCache)
+            {
+                Params["cached"] = string.Empty;
+                var cacheControl = new List<string>();
+
+                if (Options.MaxAge.HasValue)
+                {
+                    cacheControl.Add($"max-age={Convert.ToUInt64(Options.MaxAge.Value.TotalSeconds)}");
+                }
+
+                if (Options.StaleIfError.HasValue)
+                {
+                    cacheControl.Add($"stale-if-error={Convert.ToUInt64(Options.StaleIfError.Value.TotalSeconds)}");
+                }
+
+                if (cacheControl.Count > 0)
+                {
+                    Params["Cache-Control"] = string.Join(",", cacheControl);
+                }
             }
         }
 

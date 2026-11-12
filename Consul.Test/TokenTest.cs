@@ -17,29 +17,20 @@
 // -----------------------------------------------------------------------
 
 using System;
+using System.Collections.Generic;
+using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
+using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
+using Microsoft.IdentityModel.Tokens;
+using NuGet.Versioning;
 using Xunit;
 
 namespace Consul.Test
 {
-    public class TokenTest : IDisposable
+    public class TokenTest : BaseFixture
     {
-        private ConsulClient _client;
-
-        public TokenTest()
-        {
-            _client = new ConsulClient(c =>
-            {
-                c.Token = TestHelper.MasterToken;
-                c.Address = TestHelper.HttpUri;
-            });
-        }
-
-        public void Dispose()
-        {
-            _client.Dispose();
-        }
-
         [SkippableFact]
         public async Task Token_CreateDelete()
         {
@@ -194,8 +185,50 @@ namespace Consul.Test
             Assert.False(string.IsNullOrEmpty(newToken.Response.AccessorID));
             Assert.Equal(tokenEntry.Description, newToken.Response.Description);
             Assert.Equal(tokenEntry.SecretID, newToken.Response.SecretID);
-            Assert.Equal(tokenEntry.ServiceIdentities[0].ServiceName, newToken.Response.ServiceIdentities[0].ServiceName);
-            Assert.Equal(tokenEntry.ServiceIdentities[1].ServiceName, newToken.Response.ServiceIdentities[1].ServiceName);
+            Assert.Equal(tokenEntry.ServiceIdentities[0].ServiceName, newToken.Response.ServiceIdentities.OrderBy(x => x.ServiceName).ToArray()[0].ServiceName);
+            Assert.Equal(tokenEntry.ServiceIdentities[1].ServiceName, newToken.Response.ServiceIdentities.OrderBy(x => x.ServiceName).ToArray()[1].ServiceName);
+            Assert.Equal(tokenEntry.Local, newToken.Response.Local);
+
+            var deleteResponse = await _client.Token.Delete(newToken.Response.AccessorID);
+            Assert.True(deleteResponse.Response);
+        }
+
+        [SkippableFact]
+        public async Task Token_CreateWithNodeIdentitiesDelete()
+        {
+            var cutOffVersion = SemanticVersion.Parse("1.8.0");
+            Skip.If(AgentVersion < cutOffVersion, $"Current version is {AgentVersion}, but Service Tokens are only supported from Consul {cutOffVersion}");
+            Skip.If(string.IsNullOrEmpty(TestHelper.MasterToken));
+
+            var nodeIdentityOne = new NodeIdentity
+            {
+                NodeName = "node-1",
+                Datacenter = "dc1"
+            };
+
+            var nodeIdentityTwo = new NodeIdentity
+            {
+                NodeName = "node-2",
+                Datacenter = "dc2"
+            };
+
+            var tokenEntry = new TokenEntry
+            {
+                Description = "API Testing Token for Node Identity",
+                SecretID = Guid.NewGuid().ToString(),
+                NodeIdentities = new NodeIdentity[] { nodeIdentityOne, nodeIdentityTwo },
+                Local = false
+            };
+
+            var newToken = await _client.Token.Create(tokenEntry);
+
+            Assert.NotEqual(TimeSpan.Zero, newToken.RequestTime);
+            Assert.NotNull(newToken.Response);
+            Assert.False(string.IsNullOrEmpty(newToken.Response.AccessorID));
+            Assert.Equal(tokenEntry.Description, newToken.Response.Description);
+            Assert.Equal(tokenEntry.SecretID, newToken.Response.SecretID);
+            Assert.Equal(tokenEntry.NodeIdentities[0].NodeName, newToken.Response.NodeIdentities.OrderBy(x => x.NodeName).ToArray()[0].NodeName);
+            Assert.Equal(tokenEntry.NodeIdentities[1].NodeName, newToken.Response.NodeIdentities.OrderBy(x => x.NodeName).ToArray()[1].NodeName);
             Assert.Equal(tokenEntry.Local, newToken.Response.Local);
 
             var deleteResponse = await _client.Token.Delete(newToken.Response.AccessorID);
@@ -249,6 +282,232 @@ namespace Consul.Test
             Assert.NotNull(aclList.Response);
             Assert.NotEqual(TimeSpan.Zero, aclList.RequestTime);
             Assert.True(aclList.Response.Length >= 1);
+        }
+
+        [SkippableFact]
+        public async Task Token_List_FilterBy()
+        {
+            var cutOffVersion = SemanticVersion.Parse("1.14.0");
+            Skip.If(AgentVersion < cutOffVersion, $"This Consul server version({AgentVersion}) doesn't support `ServiceIdentity`. Requires >= {cutOffVersion}.");
+            Skip.If(string.IsNullOrEmpty(TestHelper.MasterToken));
+
+#if NET5_0_OR_GREATER
+            // Create a specific Policy to filter by
+            var policyEntry = new PolicyEntry
+            {
+                Name = KVTest.GenerateTestKeyName(),
+                Description = "Policy used to test token list filtering",
+                Rules = "key \"\" { policy = \"read\" }",
+            };
+            var policy = await _client.Policy.Create(policyEntry);
+            Assert.NotNull(policy.Response.Name);
+
+            // create a test role to filter by
+            var roleEntry = new RoleEntry
+            {
+                Name = KVTest.GenerateTestKeyName(),
+                Description = "Test Expanded Role",
+                Policies = new PolicyLink[] { policy.Response },
+            };
+            var role = await _client.Role.Create(roleEntry);
+            Assert.NotNull(role.Response);
+
+            var serviceIdentity = new ServiceIdentity
+            {
+                ServiceName = "web"
+            };
+
+            var tokenEntry1 = new TokenEntry
+            {
+                Description = "Token Linked to Filter Policy",
+                Policies = new PolicyLink[] { policy.Response },
+                Roles = new RoleLink[] { role.Response },
+                Local = true
+            };
+            var token1 = await _client.Token.Create(tokenEntry1);
+            Assert.NotEmpty(token1.Response.Policies);
+            Assert.NotEmpty(token1.Response.Roles);
+
+            var tokenEntry2 = new TokenEntry
+            {
+                Description = "Token NOT Linked to Filter Policy",
+                Local = true,
+                ServiceIdentities = new ServiceIdentity[] { serviceIdentity },
+            };
+            var token2 = await _client.Token.Create(tokenEntry2);
+            Assert.NotEmpty(token2.Response.Description);
+            Assert.Equal(serviceIdentity.ServiceName, token2.Response.ServiceIdentities.First().ServiceName);
+
+            string pubKeyPem;
+            string jwt;
+            using (var rsa = RSA.Create(2048))
+            {
+                pubKeyPem = rsa.ExportSubjectPublicKeyInfoPem();
+                var signingCredentials = new SigningCredentials(new RsaSecurityKey(rsa), SecurityAlgorithms.RsaSha256);
+                var token = new JwtSecurityToken(
+                    issuer: "consul-login-test-issuer",
+                    audience: "consul-login-test",
+                    claims: new[] { new Claim("sub", "test-user") },
+                    notBefore: DateTime.UtcNow.AddMinutes(-1),
+                    expires: DateTime.UtcNow.AddHours(1),
+                    signingCredentials: signingCredentials
+                );
+                jwt = new JwtSecurityTokenHandler().WriteToken(token);
+            }
+
+            var authMethodEntry = new AuthMethodEntry
+            {
+                Name = "AuthMethodLoginTest",
+                Type = "jwt",
+                Description = "JWT Auth Method for Login Testing",
+                Config = new Dictionary<string, object>
+                {
+                    ["BoundAudiences"] = new[] { "consul-login-test" },
+                    ["BoundIssuer"] = "consul-login-test-issuer",
+                    ["JWTValidationPubKeys"] = new[] { pubKeyPem },
+                    ["ClaimMappings"] = new Dictionary<string, string> { ["sub"] = "user_name" }
+                }
+            };
+            var authMethod = await _client.AuthMethod.Create(authMethodEntry);
+            Assert.NotNull(authMethod.Response);
+
+            var bindingRule = new ACLBindingRule
+            {
+                AuthMethod = authMethodEntry.Name,
+                BindType = "service",
+                BindName = "web",
+                Selector = ""
+            };
+            var bindingRuleResponse = await _client.BindingRule.Create(bindingRule);
+            Assert.NotNull(bindingRuleResponse.Response);
+
+            var token3 = await _client.AuthMethod.Login(authMethod.Response.Name, jwt);
+            Assert.NotEmpty(token3.Response.AccessorID);
+            Assert.NotEmpty(token3.Response.SecretID);
+            Assert.Equal(authMethodEntry.Name, token3.Response.AuthMethod);
+
+            // List tokens filtering by the specific PolicyID
+            var filteredList = await _client.Token.List(policy.Response.ID, null, null, null);
+            Assert.NotEmpty(filteredList.Response);
+            Assert.Contains(filteredList.Response, t => t.AccessorID == token1.Response.AccessorID);
+            Assert.DoesNotContain(filteredList.Response, t => t.AccessorID == token2.Response.AccessorID);
+
+            // List tokens filtering by the specific RoleID
+            filteredList = await _client.Token.List(null, role.Response.ID, null, null);
+            Assert.NotEmpty(filteredList.Response);
+            Assert.Contains(filteredList.Response, t => t.AccessorID == token1.Response.AccessorID);
+            Assert.DoesNotContain(filteredList.Response, t => t.AccessorID == token2.Response.AccessorID);
+
+            // List tokens filtering by the specific ServiceName
+            filteredList = await _client.Token.List(null, null, serviceIdentity.ServiceName, null);
+            Assert.NotEmpty(filteredList.Response);
+            Assert.Contains(filteredList.Response, t => t.AccessorID == token2.Response.AccessorID);
+            Assert.DoesNotContain(filteredList.Response, t => t.AccessorID == token1.Response.AccessorID);
+
+            // List tokens filtering by the specific AuthMethod
+            filteredList = await _client.Token.List(null, null, null, authMethodEntry.Name);
+            Assert.NotEmpty(filteredList.Response);
+            Assert.Contains(filteredList.Response, t => t.AccessorID == token3.Response.AccessorID);
+            Assert.DoesNotContain(filteredList.Response, t => t.AccessorID == token1.Response.AccessorID);
+            Assert.DoesNotContain(filteredList.Response, t => t.AccessorID == token2.Response.AccessorID);
+
+            // Cleanup
+            await _client.Token.Delete(token1.Response.AccessorID);
+            await _client.Token.Delete(token2.Response.AccessorID);
+            await _client.Policy.Delete(policy.Response.ID);
+            await _client.Role.Delete(role.Response.ID);
+            await _client.AuthMethod.Delete(authMethod.Response.Name);
+#else
+            Skip.If(true, "RSA.ExportSubjectPublicKeyInfoPem() is not available before NET5.0");
+            await Task.CompletedTask;
+#endif
+        }
+
+        [SkippableFact]
+        public async Task Token_ReadSelfToken()
+        {
+            Skip.If(string.IsNullOrEmpty(TestHelper.MasterToken));
+
+            var tokenEntry = await _client.Token.Read("self");
+            Assert.NotNull(tokenEntry.Response);
+
+            var token = tokenEntry.Response.SecretID;
+            var selfTokenEntry = await _client.Token.ReadSelfToken(token);
+
+            Assert.NotNull(selfTokenEntry.Response);
+            Assert.NotEqual(TimeSpan.Zero, selfTokenEntry.RequestTime);
+            Assert.Equal(selfTokenEntry.Response.SecretID, TestHelper.MasterToken);
+            Assert.Equal(selfTokenEntry.Response.SecretID, tokenEntry.Response.SecretID);
+            Assert.Equal(selfTokenEntry.Response.AccessorID, tokenEntry.Response.AccessorID);
+        }
+
+        [SkippableFact]
+        public async Task Token_ReadExpanded()
+        {
+            var cutOffVersion = SemanticVersion.Parse("1.12.0");
+            Skip.If(AgentVersion < cutOffVersion, $"Current Consul version {AgentVersion} does not support the `-expanded` flag to display detailed role and policy information for the token. Requires >= {cutOffVersion}.");
+            Skip.If(string.IsNullOrEmpty(TestHelper.MasterToken));
+
+            // create test policy
+            var policyEntry = new PolicyEntry
+            {
+                Name = KVTest.GenerateTestKeyName(),
+                Description = "Test Expanded Policy",
+                Rules = "key \"\" { policy = \"read\" }"
+            };
+            var policy = await _client.Policy.Create(policyEntry);
+            Assert.NotEmpty(policy.Response.Name);
+            Assert.NotEmpty(policy.Response.Description);
+            Assert.NotEmpty(policy.Response.Rules);
+
+            // create test role
+            var roleEntry = new RoleEntry
+            {
+                Name = KVTest.GenerateTestKeyName(),
+                Description = "Test Expanded Role",
+                Policies = new PolicyLink[] { policy.Response },
+            };
+            var role = await _client.Role.Create(roleEntry);
+            Assert.NotEmpty(role.Response.Name);
+            Assert.NotEmpty(role.Response.Description);
+            Assert.NotEmpty(role.Response.Policies);
+
+            var tokenEntry = new TokenEntry
+            {
+                Description = "Expansion Test Token",
+                Policies = new PolicyLink[] { policy.Response },
+                Roles = new RoleLink[] { role.Response },
+                Local = true
+            };
+            var newToken = await _client.Token.Create(tokenEntry);
+            var accessorId = newToken.Response.AccessorID;
+
+            // when expanded=false
+            var unexpandedRead = await _client.Token.Read(accessorId, false, QueryOptions.Default);
+            Assert.NotEmpty(unexpandedRead.Response.Policies);
+            Assert.Equal(policyEntry.Name, unexpandedRead.Response.Policies.First().Name);
+            Assert.NotEmpty(unexpandedRead.Response.Description);
+            Assert.Null(unexpandedRead.Response.AgentACLDefaultPolicy);
+            Assert.Null(unexpandedRead.Response.AgentACLDownPolicy);
+            Assert.Null(unexpandedRead.Response.ResolvedByAgent);
+            Assert.Null(unexpandedRead.Response.ExpandedPolicies);
+            Assert.Null(unexpandedRead.Response.ExpandedRoles);
+
+            // when expanded=true
+            var expandedRead = await _client.Token.Read(accessorId, true, QueryOptions.Default);
+            Assert.NotEmpty(expandedRead.Response.AgentACLDefaultPolicy);
+            Assert.NotEmpty(expandedRead.Response.AgentACLDownPolicy);
+            Assert.NotEmpty(expandedRead.Response.ResolvedByAgent);
+            Assert.NotEmpty(expandedRead.Response.ExpandedPolicies);
+            Assert.Equal(policyEntry.Rules, expandedRead.Response.ExpandedPolicies.First().Rules);
+            Assert.NotEmpty(expandedRead.Response.ExpandedRoles);
+            Assert.Equal(roleEntry.Name, expandedRead.Response.ExpandedRoles.First().Name);
+            Assert.NotEmpty(expandedRead.Response.ExpandedRoles.First().Policies);
+
+            // Cleanup
+            await _client.Token.Delete(accessorId);
+            await _client.Policy.Delete(policy.Response.ID);
+            await _client.Role.Delete(role.Response.ID);
         }
     }
 }

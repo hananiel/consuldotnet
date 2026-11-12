@@ -18,29 +18,14 @@
 // -----------------------------------------------------------------------
 
 using System;
+using System.Net;
 using System.Threading.Tasks;
 using Xunit;
 
 namespace Consul.Test
 {
-    public class CoordinateTest : IDisposable
+    public class CoordinateTest : BaseFixture
     {
-        private ConsulClient _client;
-
-        public CoordinateTest()
-        {
-            _client = new ConsulClient(c =>
-            {
-                c.Token = TestHelper.MasterToken;
-                c.Address = TestHelper.HttpUri;
-            });
-        }
-
-        public void Dispose()
-        {
-            _client.Dispose();
-        }
-
         [Fact]
         public async Task Coordinate_GetDatacenters()
         {
@@ -64,6 +49,71 @@ namespace Consul.Test
             // we can do is call the endpoint and make sure we don't
             // get an error. - from offical API.
             Assert.NotNull(nodes);
+        }
+
+        [Fact]
+        public async Task Coordinate_GetNode()
+        {
+            var info = await _client.Agent.Self();
+            var nodesResult = await _client.Coordinate.Nodes();
+
+            Assert.NotNull(nodesResult);
+            Assert.NotEmpty(nodesResult.Response);
+
+            var nodes = nodesResult.Response;
+
+            var firstNode = nodes[0];
+
+            var nodeDetailsResult = await _client.Coordinate.Node(firstNode.Node);
+
+            Assert.NotNull(nodeDetailsResult);
+            Assert.NotEmpty(nodeDetailsResult.Response);
+
+            var nodeDetails = nodeDetailsResult.Response;
+
+            Assert.IsType<CoordinateEntry[]>(nodeDetails);
+            Assert.NotEmpty(nodeDetails);
+        }
+
+        [Fact]
+        public async Task Coordinate_Update()
+        {
+            var nodeName = "foo-update-lan";
+            var registration = new CatalogRegistration
+            {
+                Node = nodeName,
+                Address = "1.1.1.1"
+            };
+            var register = await _client.Catalog.Register(registration);
+            var nodeResult = await _client.Catalog.Node(nodeName);
+            Assert.Equal(HttpStatusCode.OK, nodeResult.StatusCode);
+
+            var coord = new CoordinateEntry
+            {
+                Node = nodeName,
+                Coord = new SerfCoordinate
+                {
+                    Error = 1.5,
+                    Height = 0.5,
+                    Adjustment = 0.0,
+                    Vec = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 },
+                }
+            };
+
+            var response = await _client.Coordinate.Update(coord);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+            var q = new QueryOptions { WaitIndex = nodeResult.LastIndex, };
+            var newCoordResult = await _client.Coordinate.Node(nodeName, q);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.NotNull(newCoordResult.Response);
+
+            var newCoord = newCoordResult.Response[0];
+            Assert.Equal(coord.Coord.Vec.Count, newCoord.Coord.Vec.Count);
+            Assert.Equal(coord.Node, newCoord.Node);
+            Assert.True(Math.Abs(coord.Coord.Height - newCoord.Coord.Height) <= 0.00001);
+            Assert.True(Math.Abs(coord.Coord.Adjustment - newCoord.Coord.Adjustment) <= 0.00001);
+            Assert.True(Math.Abs(coord.Coord.Error - newCoord.Coord.Error) <= 0.00001);
         }
     }
 }

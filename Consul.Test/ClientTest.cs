@@ -18,7 +18,7 @@
 // -----------------------------------------------------------------------
 
 using System;
-using System.Linq;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -29,65 +29,81 @@ using Xunit;
 
 namespace Consul.Test
 {
-    public class ClientTest : IDisposable
+    [Collection(nameof(ExclusiveCollection))]
+    public class ClientTest : BaseFixture
     {
-        private ConsulClient _client;
+        [Theory]
+        [InlineData("1.2.3.4:5678", "", "http://1.2.3.4:5678/")]
+        [InlineData("http://1.2.3.4:5678/sub-path", "", "http://1.2.3.4:5678/sub-path")]
+        [InlineData("127.0.0.1", "", "http://127.0.0.1:8500/")]
+        [InlineData("http://127.0.0.1", "", "http://127.0.0.1:8500/")]
+        [InlineData("http://127.0.0.1:8500", "", "http://127.0.0.1:8500/")]
+        [InlineData("http://127.0.0.1:80", "", "http://127.0.0.1/")]
+        [InlineData("my.consul.com:5678", "", "http://my.consul.com:5678/")]
+        [InlineData("http://my.consul.com:5678", "", "http://my.consul.com:5678/")]
+        [InlineData("my.consul.com", "", "http://my.consul.com:8500/")]
 
-        public ClientTest()
-        {
-            _client = new ConsulClient(c =>
-            {
-                c.Token = TestHelper.MasterToken;
-                c.Address = TestHelper.HttpUri;
-            });
-        }
+        [InlineData("https://127.0.0.1:80", "", "https://127.0.0.1:80/")]
+        [InlineData("https://my.consul.com:5678", "", "https://my.consul.com:5678/")]
 
-        public void Dispose()
+        [InlineData("1.2.3.4:5678", "1", "https://1.2.3.4:5678/")]
+        [InlineData("1.2.3.4:5678/sub-path", "1", "https://1.2.3.4:5678/sub-path")]
+        [InlineData("http://1.2.3.4:5678/sub-path", "1", "https://1.2.3.4:5678/sub-path")]
+        [InlineData("127.0.0.1", "1", "https://127.0.0.1:8500/")]
+        [InlineData("http://127.0.0.1", "1", "https://127.0.0.1:8500/")]
+        [InlineData("http://127.0.0.1:8500", "1", "https://127.0.0.1:8500/")]
+        [InlineData("http://127.0.0.1:80", "1", "https://127.0.0.1:80/")]
+        [InlineData("my.consul.com:5678", "1", "https://my.consul.com:5678/")]
+        [InlineData("http://my.consul.com:5678", "1", "https://my.consul.com:5678/")]
+        [InlineData("my.consul.com", "1", "https://my.consul.com:8500/")]
+        public void Client_DefaultConfig_env(string addr, string ssl, string expected)
         {
-            _client.Dispose();
-        }
-
-        [Fact]
-        public void Client_DefaultConfig_env()
-        {
-            const string addr = "1.2.3.4:5678";
             const string token = "abcd1234";
             const string auth = "username:password";
-            Environment.SetEnvironmentVariable("CONSUL_HTTP_ADDR", addr);
-            Environment.SetEnvironmentVariable("CONSUL_HTTP_TOKEN", token);
-            Environment.SetEnvironmentVariable("CONSUL_HTTP_AUTH", auth);
-            Environment.SetEnvironmentVariable("CONSUL_HTTP_SSL", "1");
-            Environment.SetEnvironmentVariable("CONSUL_HTTP_SSL_VERIFY", "0");
 
-            var client = new ConsulClient();
-            var config = client.Config;
+            var consulHttpAddr = Environment.GetEnvironmentVariable("CONSUL_HTTP_ADDR");
+            var consulHttpToken = Environment.GetEnvironmentVariable("CONSUL_HTTP_TOKEN");
+            var consulHttpAuth = Environment.GetEnvironmentVariable("CONSUL_HTTP_AUTH");
+            var consulHttpSsl = Environment.GetEnvironmentVariable("CONSUL_HTTP_SSL");
+            var consulHttpSslVerify = Environment.GetEnvironmentVariable("CONSUL_HTTP_SSL_VERIFY");
 
-            Assert.Equal(addr, string.Format("{0}:{1}", config.Address.Host, config.Address.Port));
-            Assert.Equal(token, config.Token);
+            try
+            {
+                Environment.SetEnvironmentVariable("CONSUL_HTTP_ADDR", addr);
+                Environment.SetEnvironmentVariable("CONSUL_HTTP_TOKEN", token);
+                Environment.SetEnvironmentVariable("CONSUL_HTTP_AUTH", auth);
+                Environment.SetEnvironmentVariable("CONSUL_HTTP_SSL", ssl);
+                Environment.SetEnvironmentVariable("CONSUL_HTTP_SSL_VERIFY", "0");
+
+                var client = new ConsulClient();
+                var config = client.Config;
+
+                Assert.Equal(expected, config.Address.ToString());
+                Assert.Equal(token, config.Token);
 #pragma warning disable CS0618 // Type or member is obsolete
-            Assert.NotNull(config.HttpAuth);
-            Assert.Equal("username", config.HttpAuth.UserName);
-            Assert.Equal("password", config.HttpAuth.Password);
-#pragma warning restore CS0618 // Type or member is obsolete
-            Assert.Equal("https", config.Address.Scheme);
+                Assert.NotNull(config.HttpAuth);
+                Assert.Equal("username", config.HttpAuth.UserName);
+                Assert.Equal("password", config.HttpAuth.Password);
 
-            Environment.SetEnvironmentVariable("CONSUL_HTTP_ADDR", string.Empty);
-            Environment.SetEnvironmentVariable("CONSUL_HTTP_TOKEN", string.Empty);
-            Environment.SetEnvironmentVariable("CONSUL_HTTP_AUTH", string.Empty);
-            Environment.SetEnvironmentVariable("CONSUL_HTTP_SSL", string.Empty);
-            Environment.SetEnvironmentVariable("CONSUL_HTTP_SSL_VERIFY", string.Empty);
-
-
-#if !CORECLR
-            Assert.True((client.HttpHandler as WebRequestHandler).ServerCertificateValidationCallback(null, null, null,
-                SslPolicyErrors.RemoteCertificateChainErrors));
-            ServicePointManager.ServerCertificateValidationCallback = null;
+#if !(NETSTANDARD || NETCOREAPP)
+                Assert.True((client.HttpHandler as WebRequestHandler).ServerCertificateValidationCallback(null, null, null,
+                    SslPolicyErrors.RemoteCertificateChainErrors));
+                ServicePointManager.ServerCertificateValidationCallback = null;
 #else
-            Assert.True((client.HttpHandler as HttpClientHandler).ServerCertificateCustomValidationCallback(null, null, null,
-                SslPolicyErrors.RemoteCertificateChainErrors));
+                Assert.True((client.HttpHandler as HttpClientHandler).ServerCertificateCustomValidationCallback(null, null, null,
+                    SslPolicyErrors.RemoteCertificateChainErrors));
 #endif
 
-            Assert.NotNull(client);
+                Assert.NotNull(client);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("CONSUL_HTTP_ADDR", consulHttpAddr);
+                Environment.SetEnvironmentVariable("CONSUL_HTTP_TOKEN", consulHttpToken);
+                Environment.SetEnvironmentVariable("CONSUL_HTTP_AUTH", consulHttpAuth);
+                Environment.SetEnvironmentVariable("CONSUL_HTTP_SSL", consulHttpSsl);
+                Environment.SetEnvironmentVariable("CONSUL_HTTP_SSL_VERIFY", consulHttpSslVerify);
+            }
         }
 
         [Fact]
@@ -112,6 +128,31 @@ namespace Consul.Test
         }
 
         [Fact]
+        public async Task Client_SetQueryOptionsWithCache()
+        {
+            var opts = new QueryOptions()
+            {
+                Datacenter = "foo",
+                Consistency = ConsistencyMode.Default,
+                WaitIndex = 1000,
+                WaitTime = new TimeSpan(0, 0, 100),
+                Token = "12345",
+                UseCache = true,
+                MaxAge = new TimeSpan(0, 0, 10),
+                StaleIfError = new TimeSpan(0, 0, 10)
+            };
+            var request = _client.Get<KVPair>("/v1/kv/foo", opts);
+
+            await Assert.ThrowsAsync<ConsulRequestException>(async () => await request.Execute(CancellationToken.None));
+
+            Assert.Equal("foo", request.Params["dc"]);
+            Assert.Equal("1000", request.Params["index"]);
+            Assert.Equal("1m40s", request.Params["wait"]);
+            Assert.Equal(string.Empty, request.Params["cached"]);
+            Assert.Equal("max-age=10,stale-if-error=10", request.Params["Cache-Control"]);
+        }
+
+        [Fact]
         public async Task Client_SetClientOptions()
         {
             using (var client = new ConsulClient(c =>
@@ -131,6 +172,21 @@ namespace Consul.Test
                 Assert.Equal("1m40s", request.Params["wait"]);
             }
         }
+
+        [Fact]
+        public void Client_NonRootUri()
+        {
+            using (var client = new ConsulClient(c =>
+                   {
+                       c.Address = new Uri("http://127.0.0.1:1234/my-subpath");
+                   }))
+            {
+                var request = client.Get<KVPair>("/v1/kv/foo");
+                var uri = request.BuildConsulUri("/v1/kv/foo", new Dictionary<string, string>());
+                Assert.Equal("http://127.0.0.1:1234/my-subpath/v1/kv/foo", uri.AbsoluteUri);
+            }
+        }
+
         [Fact]
         public async Task Client_SetWriteOptions()
         {
@@ -155,9 +211,11 @@ namespace Consul.Test
                 hc.Timeout = TimeSpan.FromDays(10);
                 hc.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-                var config = new ConsulClientConfiguration();
-                config.Address = TestHelper.HttpUri;
-                config.Token = TestHelper.MasterToken;
+                var config = new ConsulClientConfiguration
+                {
+                    Address = TestHelper.HttpUri,
+                    Token = TestHelper.MasterToken
+                };
 
 #pragma warning disable CS0618 // Type or member is obsolete
                 using (var client = new ConsulClient(config, hc))
@@ -192,9 +250,11 @@ namespace Consul.Test
         [Fact]
         public async Task Client_ReuseAndUpdateConfig()
         {
-            var config = new ConsulClientConfiguration();
-            config.Address = TestHelper.HttpUri;
-            config.Token = TestHelper.MasterToken;
+            var config = new ConsulClientConfiguration
+            {
+                Address = TestHelper.HttpUri,
+                Token = TestHelper.MasterToken
+            };
 
 #pragma warning disable CS0618 // Type or member is obsolete
             using (var client = new ConsulClient(config))
@@ -205,7 +265,7 @@ namespace Consul.Test
 #pragma warning restore CS0618 // Type or member is obsolete
                 await client.KV.Put(new KVPair("kv/reuseconfig") { Flags = 1000 });
                 Assert.Equal<ulong>(1000, (await client.KV.Get("kv/reuseconfig")).Response.Flags);
-#if !CORECLR
+#if !(NETSTANDARD || NETCOREAPP)
                 Assert.True(client.HttpHandler.ServerCertificateValidationCallback(null, null, null,
                     SslPolicyErrors.RemoteCertificateChainErrors));
 #endif
@@ -220,7 +280,7 @@ namespace Consul.Test
 #pragma warning restore CS0618 // Type or member is obsolete
                 await client.KV.Put(new KVPair("kv/reuseconfig") { Flags = 2000 });
                 Assert.Equal<ulong>(2000, (await client.KV.Get("kv/reuseconfig")).Response.Flags);
-#if !CORECLR
+#if !(NETSTANDARD || NETCOREAPP)
                 Assert.Null(client.HttpHandler.ServerCertificateValidationCallback);
 #endif
             }
@@ -236,8 +296,8 @@ namespace Consul.Test
         [Fact]
         public void Client_Constructors()
         {
-            Action<ConsulClientConfiguration> cfgAction2 = (cfg) => { cfg.Token = "yep"; };
-            Action<ConsulClientConfiguration> cfgAction = (cfg) => { cfg.Datacenter = "foo"; cfgAction2(cfg); };
+            void cfgAction2(ConsulClientConfiguration cfg) { cfg.Token = "yep"; }
+            void cfgAction(ConsulClientConfiguration cfg) { cfg.Datacenter = "foo"; cfgAction2(cfg); }
 
             using (var c = new ConsulClient())
             {
@@ -264,7 +324,7 @@ namespace Consul.Test
                 Assert.Equal(TimeSpan.FromSeconds(30), c.HttpClient.Timeout);
             }
 
-#if !CORECLR
+#if !(NETSTANDARD || NETCOREAPP)
             using (var c = new ConsulClient(cfgAction,
                 (client) => { client.Timeout = TimeSpan.FromSeconds(30); },
                 (handler) => { handler.Proxy = new WebProxy("127.0.0.1", 8080); }))

@@ -23,11 +23,6 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Security.Cryptography.X509Certificates;
 using Consul.Filtering;
-using Newtonsoft.Json;
-#if !(CORECLR || PORTABLE || PORTABLE40)
-using System.Security.Permissions;
-using System.Runtime.Serialization;
-#endif
 
 namespace Consul
 {
@@ -41,13 +36,13 @@ namespace Consul
         private bool _disableServerCertificateValidation;
         private X509Certificate2 _clientCertificate;
 
-        internal event EventHandler Updated;
+        internal event EventHandler _updated;
 
-        internal static Lazy<bool> _clientCertSupport = new Lazy<bool>(() => { return Type.GetType("Mono.Runtime") == null; });
+        internal static Lazy<bool> ClientCertSupport = new Lazy<bool>(() => Type.GetType("Mono.Runtime") == null);
 
-        internal bool ClientCertificateSupported { get { return _clientCertSupport.Value; } }
+        internal static bool ClientCertificateSupported => ClientCertSupport.Value;
 
-#if CORECLR
+#if NETSTANDARD || NETCOREAPP
         [Obsolete("Use of DisableServerCertificateValidation should be converted to setting the HttpHandler's ServerCertificateCustomValidationCallback in the ConsulClient constructor" +
             "This property will be removed in a future release.", false)]
 #else
@@ -73,6 +68,12 @@ namespace Consul
         public Uri Address { get; set; }
 
         /// <summary>
+        /// Namespace is the name of the namespace to send along for the request
+        /// when no other Namespace is present in the QueryOptions
+        /// </summary>
+        public string Namespace { get; set; }
+
+        /// <summary>
         /// Datacenter to provide with each request. If not provided, the default agent datacenter is used.
         /// </summary>
         public string Datacenter { get; set; }
@@ -81,7 +82,7 @@ namespace Consul
         /// Credentials to use for access to the HTTP API.
         /// This is only needed if an authenticating service exists in front of Consul; Token is used for ACL authentication by Consul.
         /// </summary>
-#if CORECLR
+#if NETSTANDARD || NETCOREAPP
         [Obsolete("Use of HttpAuth should be converted to setting the HttpHandler's Credential property in the ConsulClient constructor" +
             "This property will be removed in a future release.", false)]
 #else
@@ -90,10 +91,7 @@ namespace Consul
 #endif
         public NetworkCredential HttpAuth
         {
-            internal get
-            {
-                return _httpauth;
-            }
+            internal get => _httpauth;
             set
             {
                 _httpauth = value;
@@ -108,7 +106,7 @@ namespace Consul
         /// <exception cref="PlatformNotSupportedException">Setting this property will throw a PlatformNotSupportedException on Mono</exception>
 #if __MonoCS__
         [Obsolete("Client Certificates are not implemented in Mono", true)]
-#elif CORECLR
+#elif NETSTANDARD || NETCOREAPP
         [Obsolete("Use of ClientCertificate should be converted to adding to the HttpHandler's ClientCertificates list in the ConsulClient constructor." +
             "This property will be removed in a future release.", false)]
 #else
@@ -117,10 +115,7 @@ namespace Consul
 #endif
         public X509Certificate2 ClientCertificate
         {
-            internal get
-            {
-                return _clientCertificate;
-            }
+            internal get => _clientCertificate;
             set
             {
                 if (!ClientCertificateSupported)
@@ -152,6 +147,12 @@ namespace Consul
             UriBuilder consulAddress = new UriBuilder("http://127.0.0.1:8500");
             ConfigureFromEnvironment(consulAddress);
             Address = consulAddress.Uri;
+
+            string ns = Environment.GetEnvironmentVariable("CONSUL_NAMESPACE");
+            if (!string.IsNullOrEmpty(ns))
+            {
+                Namespace = ns;
+            }
         }
 
         /// <summary>
@@ -163,26 +164,20 @@ namespace Consul
             var envAddr = (Environment.GetEnvironmentVariable("CONSUL_HTTP_ADDR") ?? string.Empty).Trim().ToLowerInvariant();
             if (!string.IsNullOrEmpty(envAddr))
             {
-                var addrParts = envAddr.Split(':');
-                for (int i = 0; i < addrParts.Length; i++)
+                if (!Uri.TryCreate(envAddr, UriKind.Absolute, out Uri uri) ||
+                    string.IsNullOrEmpty(uri.Host))
                 {
-                    addrParts[i] = addrParts[i].Trim();
+                    uri = new Uri($"http://{envAddr}", UriKind.Absolute);
                 }
-                if (!string.IsNullOrEmpty(addrParts[0]))
+
+                consulAddress.Host = uri.Host;
+
+                if (envAddr.Contains($"{uri.Host}:{uri.Port}"))
                 {
-                    consulAddress.Host = addrParts[0];
+                    consulAddress.Port = uri.Port;
                 }
-                if (addrParts.Length > 1 && !string.IsNullOrEmpty(addrParts[1]))
-                {
-                    try
-                    {
-                        consulAddress.Port = ushort.Parse(addrParts[1]);
-                    }
-                    catch (Exception ex)
-                    {
-                        throw new ConsulConfigurationException("Failed parsing port from environment variable CONSUL_HTTP_ADDR", ex);
-                    }
-                }
+                consulAddress.Path = uri.AbsolutePath;
+                consulAddress.Scheme = uri.Scheme;
             }
 
             var useSsl = (Environment.GetEnvironmentVariable("CONSUL_HTTP_SSL") ?? string.Empty).Trim().ToLowerInvariant();
@@ -238,9 +233,10 @@ namespace Consul
 #pragma warning restore CS0618 // Type or member is obsolete
             }
 
-            if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CONSUL_HTTP_TOKEN")))
+            string token = Environment.GetEnvironmentVariable("CONSUL_HTTP_TOKEN");
+            if (!string.IsNullOrEmpty(token))
             {
-                Token = Environment.GetEnvironmentVariable("CONSUL_HTTP_TOKEN");
+                Token = token;
             }
         }
 
@@ -249,7 +245,7 @@ namespace Consul
             // Make a temporary copy of the event to avoid possibility of
             // a race condition if the last subscriber unsubscribes
             // immediately after the null check and before the event is raised.
-            EventHandler handler = Updated;
+            EventHandler handler = _updated;
 
             // Event will be null if there are no subscribers
             handler?.Invoke(this, e);
@@ -267,72 +263,73 @@ namespace Consul
         /// </summary>
         private class ConsulClientConfigurationContainer
         {
-            internal readonly bool skipClientDispose;
-            internal readonly HttpClient HttpClient;
-#if CORECLR
-            internal readonly HttpClientHandler HttpHandler;
+            internal readonly bool _skipClientDispose;
+            internal readonly HttpClient _httpClient;
+#if NETSTANDARD || NETCOREAPP
+            internal readonly HttpClientHandler _httpHandler;
 #else
-            internal readonly WebRequestHandler HttpHandler;
+            internal readonly WebRequestHandler _httpHandler;
 #endif
             public readonly ConsulClientConfiguration Config;
 
             public ConsulClientConfigurationContainer()
             {
                 Config = new ConsulClientConfiguration();
-#if CORECLR
-                HttpHandler = new HttpClientHandler();
+#if NETSTANDARD || NETCOREAPP
+                _httpHandler = new HttpClientHandler();
 #else
-                HttpHandler = new WebRequestHandler();
+                _httpHandler = new WebRequestHandler();
 #endif
-                HttpClient = new HttpClient(HttpHandler);
-                HttpClient.Timeout = TimeSpan.FromMinutes(15);
-                HttpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-                HttpClient.DefaultRequestHeaders.Add("Keep-Alive", "true");
+                _httpClient = new HttpClient(_httpHandler);
+                _httpClient.Timeout = TimeSpan.FromMinutes(15);
+                _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                _httpClient.DefaultRequestHeaders.Add("Keep-Alive", "true");
             }
 
             #region Old style config handling
             public ConsulClientConfigurationContainer(ConsulClientConfiguration config, HttpClient client)
             {
-                skipClientDispose = true;
+                _skipClientDispose = true;
                 Config = config;
-                HttpClient = client;
+                _httpClient = client;
             }
 
             public ConsulClientConfigurationContainer(ConsulClientConfiguration config)
             {
                 Config = config;
-#if CORECLR
-                HttpHandler = new HttpClientHandler();
+#if NETSTANDARD || NETCOREAPP
+                _httpHandler = new HttpClientHandler();
 #else
-                HttpHandler = new WebRequestHandler();
+                _httpHandler = new WebRequestHandler();
 #endif
-                HttpClient = new HttpClient(HttpHandler);
-                HttpClient.Timeout = TimeSpan.FromMinutes(15);
-                HttpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-                HttpClient.DefaultRequestHeaders.Add("Keep-Alive", "true");
+                _httpClient = new HttpClient(_httpHandler)
+                {
+                    Timeout = TimeSpan.FromMinutes(15)
+                };
+
+                _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                _httpClient.DefaultRequestHeaders.Add("Keep-Alive", "true");
             }
             #endregion
 
             #region IDisposable Support
-            private bool disposedValue = false; // To detect redundant calls
+            private bool _disposedValue = false; // To detect redundant calls
 
             protected virtual void Dispose(bool disposing)
             {
-                if (!disposedValue)
+                if (!_disposedValue)
                 {
                     if (disposing)
                     {
-                        if (HttpClient != null && !skipClientDispose)
+                        if (!_skipClientDispose)
                         {
-                            HttpClient.Dispose();
+                            _httpClient?.Dispose();
                         }
-                        if (HttpHandler != null)
-                        {
-                            HttpHandler.Dispose();
-                        }
+
+                        _httpHandler?.Dispose();
                     }
 
-                    disposedValue = true;
+                    _disposedValue = true;
                 }
             }
 
@@ -352,7 +349,7 @@ namespace Consul
 
             public void CheckDisposed()
             {
-                if (disposedValue)
+                if (_disposedValue)
                 {
                     throw new ObjectDisposedException(typeof(ConsulClientConfigurationContainer).FullName.ToString());
                 }
@@ -360,17 +357,16 @@ namespace Consul
             #endregion
         }
 
-        private ConsulClientConfigurationContainer ConfigContainer;
+        private readonly ConsulClientConfigurationContainer _configContainer;
 
-        internal HttpClient HttpClient { get { return ConfigContainer.HttpClient; } }
-#if CORECLR
-        internal HttpClientHandler HttpHandler { get { return ConfigContainer.HttpHandler; } }
+        internal HttpClient HttpClient { get { return _configContainer._httpClient; } }
+#if NETSTANDARD || NETCOREAPP
+        internal HttpClientHandler HttpHandler { get { return _configContainer._httpHandler; } }
 #else
-        internal WebRequestHandler HttpHandler { get { return ConfigContainer.HttpHandler; } }
+        internal WebRequestHandler HttpHandler { get { return _configContainer._httpHandler; } }
 #endif
-        public ConsulClientConfiguration Config { get { return ConfigContainer.Config; } }
+        public ConsulClientConfiguration Config { get { return _configContainer.Config; } }
 
-        internal readonly JsonSerializer serializer = new JsonSerializer();
 
         #region New style config with Actions
         /// <summary>
@@ -402,7 +398,7 @@ namespace Consul
         /// <param name="configOverride">The Action to modify the default configuration with</param>
         /// <param name="clientOverride">The Action to modify the HttpClient with</param>
         /// <param name="handlerOverride">The Action to modify the WebRequestHandler with</param>
-#if !CORECLR
+#if !(NETSTANDARD || NETCOREAPP)
         public ConsulClient(Action<ConsulClientConfiguration> configOverride, Action<HttpClient> clientOverride, Action<WebRequestHandler> handlerOverride)
 #else
         public ConsulClient(Action<ConsulClientConfiguration> configOverride, Action<HttpClient> clientOverride, Action<HttpClientHandler> handlerOverride)
@@ -411,11 +407,11 @@ namespace Consul
             var ctr = new ConsulClientConfigurationContainer();
 
             configOverride?.Invoke(ctr.Config);
-            ApplyConfig(ctr.Config, ctr.HttpHandler, ctr.HttpClient);
-            handlerOverride?.Invoke(ctr.HttpHandler);
-            clientOverride?.Invoke(ctr.HttpClient);
+            ApplyConfig(ctr.Config, ctr._httpHandler, ctr._httpClient);
+            handlerOverride?.Invoke(ctr._httpHandler);
+            clientOverride?.Invoke(ctr._httpClient);
 
-            ConfigContainer = ctr;
+            _configContainer = ctr;
 
             InitializeEndpoints();
         }
@@ -428,11 +424,11 @@ namespace Consul
         /// <param name="config">A Consul client configuration</param>
         public ConsulClient(ConsulClientConfiguration config)
         {
-            config.Updated += HandleConfigUpdateEvent;
+            config._updated += HandleConfigUpdateEvent;
             var ctr = new ConsulClientConfigurationContainer(config);
-            ApplyConfig(ctr.Config, ctr.HttpHandler, ctr.HttpClient);
+            ApplyConfig(ctr.Config, ctr._httpHandler, ctr._httpClient);
 
-            ConfigContainer = ctr;
+            _configContainer = ctr;
             InitializeEndpoints();
         }
 
@@ -445,11 +441,11 @@ namespace Consul
         public ConsulClient(ConsulClientConfiguration config, HttpClient client)
         {
             var ctr = new ConsulClientConfigurationContainer(config, client);
-            if (!ctr.HttpClient.DefaultRequestHeaders.Accept.Contains(new MediaTypeWithQualityHeaderValue("application/json")))
+            if (!ctr._httpClient.DefaultRequestHeaders.Accept.Contains(new MediaTypeWithQualityHeaderValue("application/json")))
             {
                 throw new ArgumentException("HttpClient must accept the application/json content type", nameof(client));
             }
-            ConfigContainer = ctr;
+            _configContainer = ctr;
             InitializeEndpoints();
         }
         #endregion
@@ -457,44 +453,48 @@ namespace Consul
         private void InitializeEndpoints()
         {
 #pragma warning disable CS0618 // Type or member is obsolete
-            _acl = new Lazy<ACL>(() => new ACL(this));
+            ACL = new ACL(this);
 #pragma warning restore CS0618 // Type or member is obsolete
-            _agent = new Lazy<Agent>(() => new Agent(this));
-            _catalog = new Lazy<Catalog>(() => new Catalog(this));
-            _coordinate = new Lazy<Coordinate>(() => new Coordinate(this));
-            _event = new Lazy<Event>(() => new Event(this));
-            _health = new Lazy<Health>(() => new Health(this));
-            _kv = new Lazy<KV>(() => new KV(this));
-            _operator = new Lazy<Operator>(() => new Operator(this));
-            _policy = new Lazy<Policy>(() => new Policy(this));
-            _preparedquery = new Lazy<PreparedQuery>(() => new PreparedQuery(this));
-            _raw = new Lazy<Raw>(() => new Raw(this));
-            _role = new Lazy<Role>(() => new Role(this));
-            _session = new Lazy<Session>(() => new Session(this));
-            _snapshot = new Lazy<Snapshot>(() => new Snapshot(this));
-            _status = new Lazy<Status>(() => new Status(this));
-            _token = new Lazy<Token>(() => new Token(this));
-            _aclReplication = new Lazy<ACLReplication>(() => new ACLReplication(this));
-            _authMethod = new Lazy<AuthMethod>(() => new AuthMethod(this));
+            Agent = new Agent(this);
+            Catalog = new Catalog(this);
+            ClusterPeering = new ClusterPeering(this);
+            Coordinate = new Coordinate(this);
+            Configuration = new Configuration(this);
+            Event = new Event(this);
+            Health = new Health(this);
+            KV = new KV(this);
+            Operator = new Operator(this);
+            Policy = new Policy(this);
+            PreparedQuery = new PreparedQuery(this);
+            Raw = new Raw(this);
+            Role = new Role(this);
+            Session = new Session(this);
+            Snapshot = new Snapshot(this);
+            Status = new Status(this);
+            Token = new Token(this);
+            ACLReplication = new ACLReplication(this);
+            BindingRule = new BindingRule(this);
+            AuthMethod = new AuthMethod(this);
+            Namespaces = new Namespaces(this);
+            DiscoveryChain = new DiscoveryChain(this);
+            Connect = new Connect(this);
+            ExportedServices = new ExportedServices(this);
         }
 
         #region IDisposable Support
-        private bool disposedValue = false; // To detect redundant calls
+        private bool _disposedValue = false; // To detect redundant calls
 
         protected virtual void Dispose(bool disposing)
         {
-            if (!disposedValue)
+            if (!_disposedValue)
             {
                 if (disposing)
                 {
-                    Config.Updated -= HandleConfigUpdateEvent;
-                    if (ConfigContainer != null)
-                    {
-                        ConfigContainer.Dispose();
-                    }
+                    Config._updated -= HandleConfigUpdateEvent;
+                    _configContainer?.Dispose();
                 }
 
-                disposedValue = true;
+                _disposedValue = true;
             }
         }
 
@@ -514,7 +514,7 @@ namespace Consul
 
         public void CheckDisposed()
         {
-            if (disposedValue)
+            if (_disposedValue)
             {
                 throw new ObjectDisposedException(typeof(ConsulClient).FullName.ToString());
             }
@@ -526,11 +526,11 @@ namespace Consul
             ApplyConfig(sender as ConsulClientConfiguration, HttpHandler, HttpClient);
 
         }
-#if !CORECLR
+#if !(NETSTANDARD || NETCOREAPP)
         void ApplyConfig(ConsulClientConfiguration config, WebRequestHandler handler, HttpClient client)
 #else
         void ApplyConfig(ConsulClientConfiguration config, HttpClientHandler handler, HttpClient client)
-#endif        
+#endif
         {
 #pragma warning disable CS0618 // Type or member is obsolete
             if (config.HttpAuth != null)
@@ -541,7 +541,7 @@ namespace Consul
 #pragma warning restore CS0618 // Type or member is obsolete
             }
 #if !__MonoCS__
-            if (config.ClientCertificateSupported)
+            if (ConsulClientConfiguration.ClientCertificateSupported)
             {
 #pragma warning disable CS0618 // Type or member is obsolete
                 if (config.ClientCertificate != null)
@@ -559,12 +559,14 @@ namespace Consul
                 }
             }
 #endif
-#if !CORECLR
+#if !(NETSTANDARD || NETCOREAPP)
 #pragma warning disable CS0618 // Type or member is obsolete
             if (config.DisableServerCertificateValidation)
 #pragma warning restore CS0618 // Type or member is obsolete
             {
+#pragma warning disable CA5359 // The ServerCertificateValidationCallback is set to a function that accepts any server certificate...
                 handler.ServerCertificateValidationCallback += (certSender, cert, chain, sslPolicyErrors) => { return true; };
+#pragma warning restore CA5359
             }
             else
             {
@@ -595,67 +597,67 @@ namespace Consul
 
         internal GetRequest<TOut> Get<TOut>(string path, QueryOptions opts = null, IEncodable filter = null)
         {
-            return new GetRequest<TOut>(this, path, opts ?? QueryOptions.Default, filter);
+            return new GetRequest<TOut>(this, path, opts, filter);
         }
 
         internal GetRequest Get(string path, QueryOptions opts = null)
         {
-            return new GetRequest(this, path, opts ?? QueryOptions.Default);
+            return new GetRequest(this, path, opts);
         }
 
         internal DeleteReturnRequest<TOut> DeleteReturning<TOut>(string path, WriteOptions opts = null)
         {
-            return new DeleteReturnRequest<TOut>(this, path, opts ?? WriteOptions.Default);
+            return new DeleteReturnRequest<TOut>(this, path, opts);
         }
 
         internal DeleteRequest Delete(string path, WriteOptions opts = null)
         {
-            return new DeleteRequest(this, path, opts ?? WriteOptions.Default);
+            return new DeleteRequest(this, path, opts);
         }
 
-        internal DeleteAcceptingRequest<TIn> DeleteAccepting<TIn>(string path, TIn body, WriteOptions opts = null)
+        internal DeleteAcceptingRequest<TIn> DeleteAccepting<TIn>(string path, TIn body, WriteOptions opts)
         {
-            return new DeleteAcceptingRequest<TIn>(this, path, body, opts ?? WriteOptions.Default);
+            return new DeleteAcceptingRequest<TIn>(this, path, body, opts);
         }
 
         internal PutReturningRequest<TOut> PutReturning<TOut>(string path, WriteOptions opts = null)
         {
-            return new PutReturningRequest<TOut>(this, path, opts ?? WriteOptions.Default);
+            return new PutReturningRequest<TOut>(this, path, opts);
         }
 
-        internal PutRequest<TIn> Put<TIn>(string path, TIn body, WriteOptions opts = null)
+        internal PutRequest<TIn> Put<TIn>(string path, TIn body, WriteOptions opts)
         {
-            return new PutRequest<TIn>(this, path, body, opts ?? WriteOptions.Default);
+            return new PutRequest<TIn>(this, path, body, opts);
         }
 
         internal PutNothingRequest PutNothing(string path, WriteOptions opts = null)
         {
-            return new PutNothingRequest(this, path, opts ?? WriteOptions.Default);
+            return new PutNothingRequest(this, path, opts);
         }
 
-        internal PutRequest<TIn, TOut> Put<TIn, TOut>(string path, TIn body, WriteOptions opts = null)
+        internal PutRequest<TIn, TOut> Put<TIn, TOut>(string path, TIn body, WriteOptions opts)
         {
-            return new PutRequest<TIn, TOut>(this, path, body, opts ?? WriteOptions.Default);
+            return new PutRequest<TIn, TOut>(this, path, body, opts);
         }
 
         internal PostReturningRequest<TOut> PostReturning<TOut>(string path, WriteOptions opts = null)
         {
-            return new PostReturningRequest<TOut>(this, path, opts ?? WriteOptions.Default);
+            return new PostReturningRequest<TOut>(this, path, opts);
         }
 
-        internal PostRequest<TIn> Post<TIn>(string path, TIn body, WriteOptions opts = null)
+        internal PostRequest<TIn> Post<TIn>(string path, TIn body, WriteOptions opts)
         {
-            return new PostRequest<TIn>(this, path, body, opts ?? WriteOptions.Default);
+            return new PostRequest<TIn>(this, path, body, opts);
         }
 
-        internal PostRequest<TIn, TOut> Post<TIn, TOut>(string path, TIn body, WriteOptions opts = null)
+        internal PostRequest<TIn, TOut> Post<TIn, TOut>(string path, TIn body, WriteOptions opts)
         {
-            return new PostRequest<TIn, TOut>(this, path, body, opts ?? WriteOptions.Default);
+            return new PostRequest<TIn, TOut>(this, path, body, opts);
         }
 
         internal PostRequest Post(string path, string body, WriteOptions opts = null)
         {
-            return new PostRequest(this, path, body, opts ?? WriteOptions.Default);
+            return new PostRequest(this, path, body, opts);
         }
     }
 }

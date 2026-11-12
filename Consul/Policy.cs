@@ -16,7 +16,7 @@
 //  </copyright>
 // -----------------------------------------------------------------------
 
-using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
@@ -57,12 +57,12 @@ namespace Consul
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public string[] Datacenters { get; set; }
 
-        public bool ShouldSerializeCreateIndex()
+        public static bool ShouldSerializeCreateIndex()
         {
             return false;
         }
 
-        public bool ShouldSerializeModifyIndex()
+        public static bool ShouldSerializeModifyIndex()
         {
             return false;
         }
@@ -92,6 +92,15 @@ namespace Consul
         }
         public static implicit operator PolicyLink(PolicyEntry p) => new PolicyLink(p.ID);
     }
+    /// <summary>
+    /// Handles responses for templated policies
+    /// </summary>
+    public class TemplatedPolicyResponse
+    {
+        public string TemplateName { get; set; }
+        public string Schema { get; set; }
+        public string Template { get; set; }
+    }
 
     /// <summary>
     /// Policy is used to interact with ACL Policies in Consul through the API
@@ -118,9 +127,14 @@ namespace Consul
         /// <param name="policy">The new ACL PolicyEntry</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A write result containing the created ACL Policy</returns>
-        public Task<WriteResult<PolicyEntry>> Create(PolicyEntry policy, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<PolicyEntry>> Create(PolicyEntry policy, CancellationToken ct)
         {
             return Create(policy, WriteOptions.Default, ct);
+        }
+
+        public Task<WriteResult<PolicyEntry>> Create(PolicyEntry policy)
+        {
+            return Create(policy, WriteOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -130,7 +144,7 @@ namespace Consul
         /// <param name="writeOptions">Customised write options</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A write result containing the created ACL Policy</returns>
-        public async Task<WriteResult<PolicyEntry>> Create(PolicyEntry policy, WriteOptions writeOptions, CancellationToken ct = default(CancellationToken))
+        public async Task<WriteResult<PolicyEntry>> Create(PolicyEntry policy, WriteOptions writeOptions, CancellationToken ct = default)
         {
             var res = await _client.Put<PolicyEntry, PolicyActionResult>("/v1/acl/policy", policy, writeOptions).Execute(ct).ConfigureAwait(false);
             return new WriteResult<PolicyEntry>(res, res.Response);
@@ -142,9 +156,14 @@ namespace Consul
         /// <param name="id">The ID of the ACL Policy to delete</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>Success (true) or failure (false)</returns>
-        public Task<WriteResult<bool>> Delete(string id, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<bool>> Delete(string id, CancellationToken ct)
         {
             return Delete(id, WriteOptions.Default, ct);
+        }
+
+        public Task<WriteResult<bool>> Delete(string id)
+        {
+            return Delete(id, WriteOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -154,7 +173,7 @@ namespace Consul
         /// <param name="writeOptions">Customised write options</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>Success (true) or failure (false)</returns>
-        public async Task<WriteResult<bool>> Delete(string id, WriteOptions writeOptions, CancellationToken ct = default(CancellationToken))
+        public async Task<WriteResult<bool>> Delete(string id, WriteOptions writeOptions, CancellationToken ct = default)
         {
             var res = await _client.DeleteReturning<bool>($"/v1/acl/policy/{id}", writeOptions).Execute(ct).ConfigureAwait(false);
             return new WriteResult<bool>(res, res.Response);
@@ -165,9 +184,14 @@ namespace Consul
         /// </summary>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A query result containing an array of ACL Policies</returns>
-        public Task<QueryResult<PolicyEntry[]>> List(CancellationToken ct = default(CancellationToken))
+        public Task<QueryResult<PolicyEntry[]>> List(CancellationToken ct)
         {
             return List(QueryOptions.Default, ct);
+        }
+
+        public Task<QueryResult<PolicyEntry[]>> List()
+        {
+            return List(QueryOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -176,7 +200,7 @@ namespace Consul
         /// <param name="queryOptions">Customised query options</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A query result containing an array of ACL Policies</returns>
-        public async Task<QueryResult<PolicyEntry[]>> List(QueryOptions queryOptions, CancellationToken ct = default(CancellationToken))
+        public async Task<QueryResult<PolicyEntry[]>> List(QueryOptions queryOptions, CancellationToken ct = default)
         {
             var res = await _client.Get<PolicyEntry[]>("/v1/acl/policies", queryOptions).Execute(ct).ConfigureAwait(false);
             return new QueryResult<PolicyEntry[]>(res, res.Response);
@@ -188,9 +212,14 @@ namespace Consul
         /// <param name="id">The ID of the ACL Policy to get</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A query result containing the requested ACL Policy</returns>
-        public Task<QueryResult<PolicyEntry>> Read(string id, CancellationToken ct = default(CancellationToken))
+        public Task<QueryResult<PolicyEntry>> Read(string id, CancellationToken ct)
         {
             return Read(id, QueryOptions.Default, ct);
+        }
+
+        public Task<QueryResult<PolicyEntry>> Read(string id)
+        {
+            return Read(id, QueryOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -200,7 +229,7 @@ namespace Consul
         /// <param name="queryOptions">Customised query options</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A query result containing the requested ACL Policy</returns>
-        public async Task<QueryResult<PolicyEntry>> Read(string id, QueryOptions queryOptions, CancellationToken ct = default(CancellationToken))
+        public async Task<QueryResult<PolicyEntry>> Read(string id, QueryOptions queryOptions, CancellationToken ct = default)
         {
             var res = await _client.Get<PolicyEntry>($"/v1/acl/policy/{id}", queryOptions).Execute(ct).ConfigureAwait(false);
             return new QueryResult<PolicyEntry>(res, res.Response);
@@ -212,9 +241,14 @@ namespace Consul
         /// <param name="policy">The modified ACL Policy</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A write result containing the updated ACL Policy</returns>
-        public Task<WriteResult<PolicyEntry>> Update(PolicyEntry policy, CancellationToken ct = default(CancellationToken))
+        public Task<WriteResult<PolicyEntry>> Update(PolicyEntry policy, CancellationToken ct)
         {
             return Update(policy, WriteOptions.Default, ct);
+        }
+
+        public Task<WriteResult<PolicyEntry>> Update(PolicyEntry policy)
+        {
+            return Update(policy, WriteOptions.Default, CancellationToken.None);
         }
 
         /// <summary>
@@ -224,23 +258,132 @@ namespace Consul
         /// <param name="writeOptions">Customised write options</param>
         /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
         /// <returns>A write result containing the updated ACL policy</returns>
-        public async Task<WriteResult<PolicyEntry>> Update(PolicyEntry policy, WriteOptions writeOptions, CancellationToken ct = default(CancellationToken))
+        public async Task<WriteResult<PolicyEntry>> Update(PolicyEntry policy, WriteOptions writeOptions, CancellationToken ct = default)
         {
             var res = await _client.Put<PolicyEntry, PolicyActionResult>($"/v1/acl/policy/{policy.ID}", policy, writeOptions).Execute(ct).ConfigureAwait(false);
             return new WriteResult<PolicyEntry>(res, res.Response);
+        }
+
+        /// <summary>
+        /// Shows the policy created from a templated policy.
+        /// </summary>
+        /// <param name="name"></param>
+        /// <param name="options"></param>
+        /// <param name="ct"></param>
+        /// <returns>An ACL Policy</returns>
+        public async Task<WriteResult<PolicyEntry>> PreviewTemplatedPolicy(string name, WriteOptions options, CancellationToken ct = default)
+        {
+            var res = await _client.Post<string, PolicyEntry>($"/v1/acl/templated-policy/preview/{name}", null, options).Execute(ct).ConfigureAwait(false);
+            return new WriteResult<PolicyEntry>(res, res.Response);
+        }
+
+        /// <summary>
+        /// Shows the policy created from a templated policy.
+        /// </summary>
+        /// <param name="name"></param>
+        /// <param name="ct"></param>
+        /// <returns>An ACL Policy</returns>
+        public Task<WriteResult<PolicyEntry>> PreviewTemplatedPolicy(string name, CancellationToken ct)
+        {
+            return PreviewTemplatedPolicy(name, WriteOptions.Default, ct);
+        }
+
+        public Task<WriteResult<PolicyEntry>> PreviewTemplatedPolicy(string name)
+        {
+            return PreviewTemplatedPolicy(name, WriteOptions.Default, CancellationToken.None);
+        }
+
+        /// <summary>
+        /// Returns a list of all templated policies
+        /// </summary>
+        /// <param name="q"></param>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        public Task<QueryResult<Dictionary<string, TemplatedPolicyResponse>>> ListTemplatedPolicies(QueryOptions q, CancellationToken ct = default)
+        {
+            var res = _client.Get<Dictionary<string, TemplatedPolicyResponse>>("v1/acl/templated-policies", q);
+            return res.Execute(ct);
+        }
+
+        /// <summary>
+        /// Returns a list of all templated policies
+        /// </summary>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        public Task<QueryResult<Dictionary<string, TemplatedPolicyResponse>>> ListTemplatedPolicies(CancellationToken ct)
+        {
+            return ListTemplatedPolicies(QueryOptions.Default, ct);
+        }
+
+        public Task<QueryResult<Dictionary<string, TemplatedPolicyResponse>>> ListTemplatedPolicies()
+        {
+            return ListTemplatedPolicies(QueryOptions.Default, CancellationToken.None);
+        }
+
+        /// <summary>
+        /// Reads an ACL policy with the given ID or name parameter
+        /// </summary>
+        /// <param name="name"></param>
+        /// <param name="q"></param>
+        /// <param name="ct"></param>
+        /// <returns>Returns an ACL Policy</returns>
+        public async Task<QueryResult<TemplatedPolicyResponse>> ReadTemplatedPolicyByName(string name, QueryOptions q, CancellationToken ct = default)
+        {
+            var res = await _client.Get<TemplatedPolicyResponse>($"v1/acl/templated-policy/name/{name}", q).Execute(ct).ConfigureAwait(false);
+            return new QueryResult<TemplatedPolicyResponse>(res, res.Response);
+        }
+
+        /// <summary>
+        /// Reads an ACL policy with the given ID or name parameter
+        /// </summary>
+        /// <param name="name"></param>
+        /// <param name="ct"></param>
+        /// <returns>Returns an ACL Policy</returns>
+        public Task<QueryResult<TemplatedPolicyResponse>> ReadTemplatedPolicyByName(string name, CancellationToken ct)
+        {
+            return ReadTemplatedPolicyByName(name, QueryOptions.Default, ct);
+        }
+
+        public Task<QueryResult<TemplatedPolicyResponse>> ReadTemplatedPolicyByName(string name)
+        {
+            return ReadTemplatedPolicyByName(name, QueryOptions.Default, CancellationToken.None);
+        }
+
+        /// <summary>
+        /// Gets the requested ACL Policy from Consul
+        /// </summary>
+        /// <param name="name">The name of the ACL Policy to get</param>
+        /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
+        /// <returns>A query result containing the requested ACL Policy</returns>
+        public Task<QueryResult<PolicyEntry>> ReadPolicyByName(string name, CancellationToken ct)
+        {
+            return ReadPolicyByName(name, QueryOptions.Default, ct);
+        }
+
+        public Task<QueryResult<PolicyEntry>> ReadPolicyByName(string name)
+        {
+            return ReadPolicyByName(name, QueryOptions.Default, CancellationToken.None);
+        }
+
+        /// <summary>
+        /// Gets the requested ACL Policy from Consul
+        /// </summary>
+        /// <param name="name">The name of the ACL Policy to get</param>
+        /// <param name="queryOptions">Customised query options</param>
+        /// <param name="ct">Cancellation token for long poll request. If set, OperationCanceledException will be thrown if the request is cancelled before completing</param>
+        /// <returns>A query result containing the requested ACL Policy</returns>
+        public async Task<QueryResult<PolicyEntry>> ReadPolicyByName(string name, QueryOptions queryOptions, CancellationToken ct = default)
+        {
+            var res = await _client.Get<PolicyEntry>($"/v1/acl/policy/name/{name}", queryOptions).Execute(ct).ConfigureAwait(false);
+            return new QueryResult<PolicyEntry>(res, res.Response);
         }
     }
 
     public partial class ConsulClient : IConsulClient
     {
-        private Lazy<Policy> _policy;
-
         /// <summary>
         /// Policy returns a handle to the ACL Policy endpoints
         /// </summary>
-        public IPolicyEndpoint Policy
-        {
-            get { return _policy.Value; }
-        }
+        public IPolicyEndpoint Policy { get; private set; }
     }
 }

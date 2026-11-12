@@ -17,29 +17,15 @@
 // -----------------------------------------------------------------------
 
 using System;
+using System.Net;
 using System.Threading.Tasks;
+using NuGet.Versioning;
 using Xunit;
 
 namespace Consul.Test
 {
-    public class PolicyTest : IDisposable
+    public class PolicyTest : BaseFixture
     {
-        private ConsulClient _client;
-
-        public PolicyTest()
-        {
-            _client = new ConsulClient(c =>
-            {
-                c.Token = TestHelper.MasterToken;
-                c.Address = TestHelper.HttpUri;
-            });
-        }
-
-        public void Dispose()
-        {
-            _client.Dispose();
-        }
-
         [SkippableFact]
         public async Task Policy_CreateDelete()
         {
@@ -88,6 +74,73 @@ namespace Consul.Test
             Assert.NotNull(aclPolicyList.Response);
             Assert.NotEqual(TimeSpan.Zero, aclPolicyList.RequestTime);
             Assert.True(aclPolicyList.Response.Length >= 1);
+        }
+
+        [SkippableFact]
+        public async Task Policy_PreviewATemplatedPolicyByName()
+        {
+            var cutOffVersion = SemanticVersion.Parse("1.17.0");
+            Skip.If(AgentVersion < cutOffVersion, $"Current version is {AgentVersion}, but `Templated Policies` are only supported from Consul {cutOffVersion}");
+
+            Skip.If(string.IsNullOrEmpty(TestHelper.MasterToken));
+
+            var templatedPolicyName = "builtin/dns";
+            var templatedPolicy = await _client.Policy.PreviewTemplatedPolicy(templatedPolicyName);
+
+            Assert.Equal(HttpStatusCode.OK, templatedPolicy.StatusCode);
+            Assert.NotNull(templatedPolicy.Response);
+            Assert.NotNull(templatedPolicy.Response.ID);
+            Assert.True(!string.IsNullOrEmpty(templatedPolicy.Response.Name));
+            Assert.True(!string.IsNullOrEmpty(templatedPolicy.Response.Rules));
+            Assert.True(!string.IsNullOrEmpty(templatedPolicy.Response.Description));
+        }
+
+        [SkippableFact]
+        public async Task Policy_ListTemplatedPolicies()
+        {
+            var cutOffVersion = SemanticVersion.Parse("1.17.0");
+            Skip.If(AgentVersion < cutOffVersion, $"Current version is {AgentVersion}, but `Templated Policies` are only supported from Consul {cutOffVersion}");
+
+            Skip.If(string.IsNullOrEmpty(TestHelper.MasterToken));
+
+            var templatedPolicyList = await _client.Policy.ListTemplatedPolicies();
+
+            Assert.Equal(HttpStatusCode.OK, templatedPolicyList.StatusCode);
+            Assert.NotNull(templatedPolicyList.Response);
+            Assert.True(templatedPolicyList.Response.Count > 0);
+        }
+
+        [SkippableFact]
+        public async Task Policy_ReadTemplatedPolicyByName()
+        {
+            var cutOffVersion = SemanticVersion.Parse("1.17.0");
+            Skip.If(AgentVersion < cutOffVersion, $"Current version is {AgentVersion}, but `Templated Policies` are only supported from Consul {cutOffVersion}");
+
+            Skip.If(string.IsNullOrEmpty(TestHelper.MasterToken));
+
+            var templatedPolicyName = "builtin/api-gateway";
+            var templatedPolicy = await _client.Policy.ReadTemplatedPolicyByName(templatedPolicyName);
+
+            Assert.Equal(HttpStatusCode.OK, templatedPolicy.StatusCode);
+            Assert.NotNull(templatedPolicy.Response);
+            Assert.Equal(templatedPolicyName, templatedPolicy.Response.TemplateName);
+            Assert.True(!string.IsNullOrEmpty(templatedPolicy.Response.Template));
+            Assert.True(!string.IsNullOrEmpty(templatedPolicy.Response.Schema));
+        }
+
+        [SkippableFact]
+        public async Task Policy_ReadPolicyByName()
+        {
+            var cutOffVersion = SemanticVersion.Parse("1.7.0");
+            Skip.If(AgentVersion < cutOffVersion, $"Current version is {AgentVersion}, but `ACL Policies` are only supported from Consul {cutOffVersion}");
+
+            Skip.If(string.IsNullOrEmpty(TestHelper.MasterToken));
+
+            var policyEntry = await _client.Policy.ReadPolicyByName("global-management");
+
+            Assert.NotNull(policyEntry.Response);
+            Assert.NotEqual(TimeSpan.Zero, policyEntry.RequestTime);
+            Assert.Equal("00000000-0000-0000-0000-000000000001", policyEntry.Response.ID);
         }
     }
 }
